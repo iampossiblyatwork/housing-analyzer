@@ -127,7 +127,8 @@ let allData     = [];     // raw API response
 let heatData    = [];     // filtered {lat, lng, value, raw} for the current metric
 let heatLayer   = null;   // L.geoJSON of the interpolated cells
 let markerGroup = null;   // L.layerGroup of property CircleMarkers
-let lastBbox    = null;   // [west, south, east, north] of the last successful load
+let dataHull    = null;   // turf Feature<Polygon> — buffered convex hull of loaded points
+let hullBbox    = null;   // [w, s, e, n] derived from dataHull (anchors the IDW grid)
 let autoLoad    = false;  // refetch on every moveend when true
 let moveTimer   = null;   // debounce timer for auto-load
 let currentAbort = null;  // AbortController for in-flight fetch
@@ -258,8 +259,24 @@ async function fetchAndRender() {
       return;
     }
 
-    const b = map.getBounds();
-    lastBbox = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
+    // Anchor the IDW grid to the convex hull of the loaded data (buffered
+    // ~1.5km), not the viewport bbox — otherwise panning leaves a "giant
+    // green bar" stretched across unrelated rectangle. turf.convex returns
+    // null for <3 unique points or all-collinear input; in that edge case we
+    // fall back to the viewport bbox so a single property still renders.
+    const fc = turf.featureCollection(
+      heatData.map(p => turf.point([p.lng, p.lat], { v: p.value }))
+    );
+    const hull = turf.convex(fc);
+    if (hull) {
+      dataHull = turf.buffer(hull, 1.5, { units: 'kilometers' });
+      hullBbox = turf.bbox(dataHull);
+    } else {
+      console.warn('heatmap: turf.convex returned null (<3 unique points or collinear) — falling back to viewport bbox');
+      const b = map.getBounds();
+      dataHull = null;
+      hullBbox = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
+    }
 
     renderHeat();
     renderMarkers();
@@ -301,7 +318,7 @@ function onMetricChange() {
 
 // ── Heat layer (turf.interpolate IDW grid → GeoJSON polygons) ─────────────────
 function renderHeat() {
-  if (heatData.length === 0 || !lastBbox) return;
+  if (heatData.length === 0 || !hullBbox) return;
 
   // p5/p95 clamping prevents single outliers from washing the field to a
   // uniform green; legend below still surfaces the actual min/max.
@@ -317,7 +334,7 @@ function renderHeat() {
   const res = parseInt(document.getElementById('resSlider').value);
   const power = parseFloat(document.getElementById('powerSlider').value);
 
-  const [w, s, e, n] = lastBbox;
+  const [w, s, e, n] = hullBbox;
   const midLat = (s + n) / 2;
   const widthKm  = Math.abs(e - w) * 111 * Math.cos(midLat * Math.PI / 180);
   const heightKm = Math.abs(n - s) * 111;
@@ -328,7 +345,7 @@ function renderHeat() {
     property: 'v',
     weight:   power,
     units:    'kilometers',
-    bbox:     lastBbox,
+    bbox:     hullBbox,
   });
 
   if (heatLayer) map.removeLayer(heatLayer);
@@ -407,6 +424,8 @@ function clearLayers() {
   if (heatLayer)   { map.removeLayer(heatLayer);   heatLayer = null; }
   if (markerGroup) { map.removeLayer(markerGroup); markerGroup = null; }
   heatData = [];
+  dataHull = null;
+  hullBbox = null;
   document.getElementById('legend').classList.add('hidden');
 }
 
