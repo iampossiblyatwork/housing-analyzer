@@ -1,106 +1,140 @@
 {% extends "base.html" %}
-{% block title %}Housing Analyzer{% endblock %}
+{% block title %}Housing Analyzer — Market Research Portal{% endblock %}
 {% block page_title %}Market Analysis{% endblock %}
 
 {% block content %}
+
+{# ── Hero search ─────────────────────────────────────────────────────────── #}
 <div class="mb-stack-lg">
-  <h2 class="text-headline-lg text-primary tracking-tight">Housing Research Portal</h2>
-  <p class="text-body-md text-on-surface-variant mt-1">Search markets, look up properties, compare areas, and set smart alerts.</p>
+  <h2 class="text-headline-md text-primary mb-1">Analyze Any Market</h2>
+  <p class="text-body-md text-on-surface-variant mb-stack-md">24-month history · Year-over-year comparisons · Seasonal trend analysis</p>
+
+  <form method="get" action="/market" class="flex gap-2 max-w-md">
+    <input name="zip" placeholder="Enter ZIP code" autofocus
+           class="flex-1 px-4 py-3 text-body-md border border-outline-variant rounded-lg bg-white
+                  focus:outline-none focus:border-secondary focus:ring-1 focus:ring-secondary">
+    <button type="submit"
+            class="px-6 py-3 bg-secondary text-white text-label-md font-semibold rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2">
+      <span class="material-symbols-outlined" style="font-size:18px">search</span>
+      Analyze
+    </button>
+  </form>
 </div>
 
-<div class="grid grid-cols-1 md:grid-cols-2 gap-gutter max-w-3xl">
+{# ── Feature grid ────────────────────────────────────────────────────────── #}
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-stack-lg">
 
-  <!-- Market Analysis -->
-  <div class="bg-white border border-outline-variant rounded-lg p-stack-md hover:shadow-elevated transition-shadow">
-    <div class="flex items-center gap-2 mb-3">
-      <span class="material-symbols-outlined filled text-secondary" style="font-size:22px">dashboard</span>
-      <h3 class="text-label-md font-semibold text-primary">Market Analysis</h3>
+  <a href="/market" class="bg-white border border-outline-variant rounded-lg p-5 hover:shadow-card hover:border-secondary transition-all group">
+    <div class="flex items-center gap-3 mb-3">
+      <div class="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center">
+        <span class="material-symbols-outlined filled text-white" style="font-size:20px">dashboard</span>
+      </div>
+      <h3 class="text-label-md font-semibold text-primary group-hover:text-secondary transition-colors">Market Deep-Dive</h3>
     </div>
-    <p class="text-label-sm text-on-surface-variant mb-4">Rental &amp; sale trends, pricing, days on market, and insights for any ZIP code.</p>
-    <form action="/market" method="get" class="space-y-2">
-      <div class="flex gap-2">
-        <input type="text" name="zip" placeholder="ZIP code (e.g. 78244)" required
-               class="flex-1 border border-outline-variant rounded-lg px-3 py-2 text-label-md bg-white focus:outline-none focus:ring-2 focus:ring-secondary/30 focus:border-secondary transition-all placeholder:text-outline">
-        <button type="submit" class="px-4 py-2 bg-secondary text-white text-label-md font-medium rounded-lg hover:bg-secondary/90 transition-colors whitespace-nowrap">
-          Analyze
-        </button>
-      </div>
-      <div class="flex items-center gap-2">
-        <label class="text-label-sm text-on-surface-variant whitespace-nowrap">History:</label>
-        <select name="history" class="flex-1 border border-outline-variant rounded-lg px-2 py-1.5 text-label-sm bg-white focus:outline-none focus:ring-2 focus:ring-secondary/30">
-          <option value="6">6 months</option>
-          <option value="12" selected>12 months</option>
-          <option value="24">24 months</option>
-        </select>
-      </div>
-    </form>
-  </div>
+    <p class="text-label-sm text-on-surface-variant">24-month price, DOM, and inventory trends with 12-month moving averages and YoY delta panels.</p>
+    <div class="mt-3 flex flex-wrap gap-1">
+      <span class="px-2 py-0.5 bg-surface-container text-label-sm text-on-surface-variant rounded">24-mo history</span>
+      <span class="px-2 py-0.5 bg-surface-container text-label-sm text-on-surface-variant rounded">YoY analysis</span>
+      <span class="px-2 py-0.5 bg-surface-container text-label-sm text-on-surface-variant rounded">Seasonality</span>
+    </div>
+  </a>
 
-  <!-- Property Lookup -->
-  <div class="bg-white border border-outline-variant rounded-lg p-stack-md hover:shadow-elevated transition-shadow">
-    <div class="flex items-center gap-2 mb-3">
-      <span class="material-symbols-outlined filled text-on-tertiary-container" style="font-size:22px">home_work</span>
-      <h3 class="text-label-md font-semibold text-primary">Property Lookup</h3>
-    </div>
-    <p class="text-label-sm text-on-surface-variant mb-4">Get rent &amp; sale estimates, property details, and investor metrics for a specific address.</p>
-    <form action="/property" method="get">
-      <div class="flex gap-2">
-        <input type="text" name="address" placeholder="123 Main St, City, TX 78244" required
-               class="flex-1 border border-outline-variant rounded-lg px-3 py-2 text-label-md bg-white focus:outline-none focus:ring-2 focus:ring-secondary/30 focus:border-secondary transition-all placeholder:text-outline">
-        <button type="submit" class="px-4 py-2 bg-on-tertiary-container text-white text-label-md font-medium rounded-lg hover:opacity-90 transition-opacity whitespace-nowrap">
-          Look Up
-        </button>
+  <a href="/signals" class="bg-white border border-outline-variant rounded-lg p-5 hover:shadow-card hover:border-secondary transition-all group">
+    <div class="flex items-center gap-3 mb-3">
+      <div class="w-10 h-10 rounded-lg bg-on-tertiary-container flex items-center justify-center">
+        <span class="material-symbols-outlined filled text-white" style="font-size:20px">stacked_line_chart</span>
       </div>
-    </form>
-  </div>
-
-  <!-- Compare Markets -->
-  <div class="bg-white border border-outline-variant rounded-lg p-stack-md hover:shadow-elevated transition-shadow">
-    <div class="flex items-center gap-2 mb-3">
-      <span class="material-symbols-outlined filled text-amber-600" style="font-size:22px">compare_arrows</span>
-      <h3 class="text-label-md font-semibold text-primary">Compare Markets</h3>
+      <h3 class="text-label-md font-semibold text-primary group-hover:text-secondary transition-colors">Signal Chain</h3>
     </div>
-    <p class="text-label-sm text-on-surface-variant mb-4">Side-by-side comparison of two ZIP codes across all key metrics.</p>
-    <form action="/compare" method="get" class="space-y-2">
-      <div class="flex gap-2">
-        <input type="text" name="zip1" placeholder="ZIP 1" required
-               class="flex-1 border border-outline-variant rounded-lg px-3 py-2 text-label-md bg-white focus:outline-none focus:ring-2 focus:ring-secondary/30 placeholder:text-outline">
-        <input type="text" name="zip2" placeholder="ZIP 2" required
-               class="flex-1 border border-outline-variant rounded-lg px-3 py-2 text-label-md bg-white focus:outline-none focus:ring-2 focus:ring-secondary/30 placeholder:text-outline">
-        <button type="submit" class="px-4 py-2 bg-amber-500 text-white text-label-md font-medium rounded-lg hover:bg-amber-600 transition-colors">
-          Compare
-        </button>
+    <p class="text-label-sm text-on-surface-variant">Leading vs. lagging indicators from the PDF framework — NAHB → Permits → Starts → DOM → Prices.</p>
+    <div class="mt-3 flex flex-wrap gap-1">
+      <span class="px-2 py-0.5 bg-surface-container text-label-sm text-on-surface-variant rounded">Leading signals</span>
+      <span class="px-2 py-0.5 bg-surface-container text-label-sm text-on-surface-variant rounded">FRED macro</span>
+    </div>
+  </a>
+
+  <a href="/compare" class="bg-white border border-outline-variant rounded-lg p-5 hover:shadow-card hover:border-secondary transition-all group">
+    <div class="flex items-center gap-3 mb-3">
+      <div class="w-10 h-10 rounded-lg bg-amber-600 flex items-center justify-center">
+        <span class="material-symbols-outlined filled text-white" style="font-size:20px">compare_arrows</span>
       </div>
-    </form>
-  </div>
-
-  <!-- Geofence Search -->
-  <div class="bg-white border border-outline-variant rounded-lg p-stack-md hover:shadow-elevated transition-shadow">
-    <div class="flex items-center gap-2 mb-3">
-      <span class="material-symbols-outlined filled text-red-600" style="font-size:22px">location_on</span>
-      <h3 class="text-label-md font-semibold text-primary">Geofence Search</h3>
+      <h3 class="text-label-md font-semibold text-primary group-hover:text-secondary transition-colors">Multi-ZIP Compare</h3>
     </div>
-    <p class="text-label-sm text-on-surface-variant mb-4">Drop a pin, set a radius, and find all properties within that area on an interactive map.</p>
-    <a href="/geofence" class="block w-full text-center px-4 py-2 bg-red-600 text-white text-label-md font-medium rounded-lg hover:bg-red-700 transition-colors">
-      Open Map Search
-    </a>
-  </div>
+    <p class="text-label-sm text-on-surface-variant">Overlay 2–3 markets on the same time-series chart. See relative momentum, not just point-in-time snapshots.</p>
+    <div class="mt-3 flex flex-wrap gap-1">
+      <span class="px-2 py-0.5 bg-surface-container text-label-sm text-on-surface-variant rounded">Up to 3 ZIPs</span>
+      <span class="px-2 py-0.5 bg-surface-container text-label-sm text-on-surface-variant rounded">Trend overlay</span>
+    </div>
+  </a>
+
+  <a href="/heatmap" class="bg-white border border-outline-variant rounded-lg p-5 hover:shadow-card hover:border-secondary transition-all group">
+    <div class="flex items-center gap-3 mb-3">
+      <div class="w-10 h-10 rounded-lg bg-blue-600 flex items-center justify-center">
+        <span class="material-symbols-outlined filled text-white" style="font-size:20px">map</span>
+      </div>
+      <h3 class="text-label-md font-semibold text-primary group-hover:text-secondary transition-colors">Metric Heatmap</h3>
+    </div>
+    <p class="text-label-sm text-on-surface-variant">IDW-interpolated continuous field heatmap. See price, price/sqft, and DOM as a spatial value field across any radius.</p>
+    <div class="mt-3 flex flex-wrap gap-1">
+      <span class="px-2 py-0.5 bg-surface-container text-label-sm text-on-surface-variant rounded">IDW interpolation</span>
+      <span class="px-2 py-0.5 bg-surface-container text-label-sm text-on-surface-variant rounded">3 metrics</span>
+    </div>
+  </a>
+
+  <a href="/investor" class="bg-white border border-outline-variant rounded-lg p-5 hover:shadow-card hover:border-secondary transition-all group">
+    <div class="flex items-center gap-3 mb-3">
+      <div class="w-10 h-10 rounded-lg bg-emerald-600 flex items-center justify-center">
+        <span class="material-symbols-outlined filled text-white" style="font-size:20px">trending_up</span>
+      </div>
+      <h3 class="text-label-md font-semibold text-primary group-hover:text-secondary transition-colors">Investor Calculator</h3>
+    </div>
+    <p class="text-label-sm text-on-surface-variant">NOI, cap rate, GRM, DSCR, and price-to-rent — all with threshold-based interpretations from the PDF framework.</p>
+    <div class="mt-3 flex flex-wrap gap-1">
+      <span class="px-2 py-0.5 bg-surface-container text-label-sm text-on-surface-variant rounded">Cap rate</span>
+      <span class="px-2 py-0.5 bg-surface-container text-label-sm text-on-surface-variant rounded">DSCR</span>
+      <span class="px-2 py-0.5 bg-surface-container text-label-sm text-on-surface-variant rounded">GRM</span>
+    </div>
+  </a>
+
+  <a href="/reference" class="bg-white border border-outline-variant rounded-lg p-5 hover:shadow-card hover:border-secondary transition-all group">
+    <div class="flex items-center gap-3 mb-3">
+      <div class="w-10 h-10 rounded-lg bg-slate-600 flex items-center justify-center">
+        <span class="material-symbols-outlined filled text-white" style="font-size:20px">menu_book</span>
+      </div>
+      <h3 class="text-label-md font-semibold text-primary group-hover:text-secondary transition-colors">Metrics Reference</h3>
+    </div>
+    <p class="text-label-sm text-on-surface-variant">Complete glossary from the PDF — all thresholds, interpretations, data sources, and analytical patterns in one place.</p>
+    <div class="mt-3 flex flex-wrap gap-1">
+      <span class="px-2 py-0.5 bg-surface-container text-label-sm text-on-surface-variant rounded">Supply</span>
+      <span class="px-2 py-0.5 bg-surface-container text-label-sm text-on-surface-variant rounded">Affordability</span>
+      <span class="px-2 py-0.5 bg-surface-container text-label-sm text-on-surface-variant rounded">Investor</span>
+    </div>
+  </a>
 
 </div>
 
-<!-- Quick links row -->
-<div class="mt-stack-lg flex gap-3 flex-wrap">
-  <a href="/investor" class="flex items-center gap-2 px-4 py-2 border border-secondary text-secondary text-label-md rounded-lg hover:bg-secondary-fixed transition-colors">
-    <span class="material-symbols-outlined" style="font-size:18px">trending_up</span>
-    Investor Calculator
-  </a>
-  <a href="/reference" class="flex items-center gap-2 px-4 py-2 border border-outline-variant text-on-surface-variant text-label-md rounded-lg hover:bg-surface-container-high transition-colors">
-    <span class="material-symbols-outlined" style="font-size:18px">menu_book</span>
-    Metrics Reference
-  </a>
-  <a href="/alerts" class="flex items-center gap-2 px-4 py-2 border border-outline-variant text-on-surface-variant text-label-md rounded-lg hover:bg-surface-container-high transition-colors">
-    <span class="material-symbols-outlined" style="font-size:18px">notifications</span>
-    Manage Alerts
-  </a>
+{# ── Analytics principles callout ────────────────────────────────────────── #}
+<div class="bg-white border border-outline-variant rounded-lg p-5">
+  <h3 class="text-label-md font-semibold text-primary mb-3">Core Analytical Principles</h3>
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+    {% set principles = [
+      ("compare_arrows", "Always Compare YoY", "DOM and inventory are highly seasonal. Month-over-month comparisons are nearly meaningless without seasonal adjustment."),
+      ("hub", "Divergences Are the Signal", "No single metric is diagnostic. The real signal lives in divergences — when leading and lagging indicators disagree."),
+      ("show_chart", "Pair Price with Context", "Median price can reflect appreciation OR compositional shift. Always pair with price/sqft and a repeat-sales index."),
+      ("schedule", "Leading vs. Lagging", "NAHB confidence leads permits by 1–3 months. Closed sales lag DOM by weeks. Know where you are in the chain."),
+      ("trending_down", "Watch Withdrawn Listings", "Listings that disappear without selling signal seller capitulation — shadow supply that headline inventory misses."),
+      ("attach_money", "Rate Lock-In Context", "Low inventory ≠ strong demand when the lock-in effect is suppressing turnover. Always contextualize."),
+    ] %}
+    {% for icon, title, desc in principles %}
+    <div class="flex items-start gap-3">
+      <span class="material-symbols-outlined text-secondary shrink-0 mt-0.5" style="font-size:18px">{{ icon }}</span>
+      <div>
+        <div class="text-label-sm font-semibold text-on-surface">{{ title }}</div>
+        <div class="text-label-sm text-on-surface-variant mt-0.5">{{ desc }}</div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
 </div>
+
 {% endblock %}

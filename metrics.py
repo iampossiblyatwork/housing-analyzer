@@ -460,6 +460,199 @@ ANALYTICAL_PATTERNS = [
 ]
 
 
+# ── Time-series analytics ─────────────────────────────────────────────────────
+
+def build_yoy_series(labels, values):
+    """
+    Given parallel lists of YYYY-MM (or YYYY-MM-DD) labels and numeric values,
+    return a list of YoY % changes (same length). None where year-ago data absent.
+    """
+    lookup = {}
+    for lbl, val in zip(labels, values):
+        if val is not None:
+            lookup[lbl[:7]] = val
+    result = []
+    for lbl in labels:
+        ym = lbl[:7]
+        try:
+            y, m = ym.split("-")
+            ya_ym = f"{int(y)-1:04d}-{m}"
+        except ValueError:
+            result.append(None)
+            continue
+        cur  = lookup.get(ym)
+        prev = lookup.get(ya_ym)
+        if cur is not None and prev and prev != 0:
+            result.append(round((cur - prev) / prev * 100, 1))
+        else:
+            result.append(None)
+    return result
+
+
+def compute_moving_average(values, window=12):
+    """
+    Trailing N-period moving average. Returns None until enough data accumulates.
+    Tolerates None values in the input by skipping them.
+    """
+    result = []
+    for i in range(len(values)):
+        window_vals = [v for v in values[max(0, i - window + 1):i + 1] if v is not None]
+        if len(window_vals) >= max(1, window // 2):
+            result.append(round(sum(window_vals) / len(window_vals), 2))
+        else:
+            result.append(None)
+    return result
+
+
+# ── Signal chain ──────────────────────────────────────────────────────────────
+
+SIGNAL_CHAIN = [
+    {
+        "id":          "nahb",
+        "name":        "NAHB Builder Confidence",
+        "description": "Builder sentiment index. Leads permits/starts by 1–3 months.",
+        "source":      "FRED: NAHBMMI",
+        "fred_series": "NAHBMMI",
+        "type":        "leading",
+        "thresholds":  {"strong": 55, "neutral": 45},
+    },
+    {
+        "id":          "permits",
+        "name":        "Building Permits",
+        "description": "Forward-supply pipeline. Leads starts; trust permits for direction.",
+        "source":      "FRED: PERMIT",
+        "fred_series": "PERMIT",
+        "type":        "leading",
+        "thresholds":  None,
+    },
+    {
+        "id":          "starts",
+        "name":        "Housing Starts",
+        "description": "Leads completions. Compare to permits — divergence = trend change ahead.",
+        "source":      "FRED: HOUST",
+        "fred_series": "HOUST",
+        "type":        "leading",
+        "thresholds":  None,
+    },
+    {
+        "id":          "inventory",
+        "name":        "Active Listings / MOS",
+        "description": "Months of supply. Always compare YoY — inventory is highly seasonal.",
+        "source":      "RentCast: saleData.monthsOfSupply",
+        "fred_series": None,
+        "type":        "coincident",
+        "thresholds":  {"strong": 3, "neutral": 7},
+    },
+    {
+        "id":          "dom",
+        "name":        "Days on Market",
+        "description": "Directly reflects buyer urgency. Always compare to same month last year.",
+        "source":      "RentCast: saleData.averageDaysOnMarket",
+        "fred_series": None,
+        "type":        "coincident",
+        "thresholds":  {"strong": 30, "neutral": 40},
+    },
+    {
+        "id":          "snlr",
+        "name":        "Sale-to-List Ratio",
+        "description": "Best single read on negotiating power. A drop from 100% to 98% is meaningful.",
+        "source":      "RentCast: saleData",
+        "fred_series": None,
+        "type":        "coincident",
+        "thresholds":  {"strong": 100, "neutral": 97},
+    },
+    {
+        "id":          "prices",
+        "name":        "Median Sale Price",
+        "description": "Lagging confirmation. Always pair with price/sqft to control for mix.",
+        "source":      "RentCast: saleData.medianPrice",
+        "fred_series": None,
+        "type":        "lagging",
+        "thresholds":  None,
+    },
+]
+
+
+def assess_signal_chain(market_data, macro_data):
+    """
+    Returns enriched SIGNAL_CHAIN with current values and status badges injected.
+    macro_data = output of fred_api.get_macro_context() (may be empty dict).
+    """
+    sale = market_data.get("saleData", {})
+    history = sale.get("history", {})
+    months = sorted(history.keys())
+
+    result = []
+    for node in SIGNAL_CHAIN:
+        entry = dict(node)
+        entry["value"]  = None
+        entry["yoy"]    = None
+        entry["badge"]  = "secondary"
+        entry["status"] = "No data"
+
+        sid = node.get("fred_series")
+        nid = node["id"]
+
+        if sid and sid in macro_data:
+            obs = macro_data[sid]["history"]
+            if obs:
+                entry["value"] = obs[-1]["value"]
+                # YoY for FRED monthly series
+                if len(obs) >= 13:
+                    cur  = obs[-1]["value"]
+                    prev = obs[-13]["value"]
+                    if prev and prev != 0:
+                        entry["yoy"] = round((cur - prev) / prev * 100, 1)
+                thresh = node.get("thresholds")
+                if thresh and nid == "nahb":
+                    v = entry["value"]
+                    entry["badge"]  = "success" if v >= thresh["strong"] else "warning" if v >= thresh["neutral"] else "danger"
+                    entry["status"] = "Positive" if v >= thresh["strong"] else "Neutral" if v >= thresh["neutral"] else "Negative"
+                elif entry["yoy"] is not None:
+                    entry["badge"]  = "success" if entry["yoy"] > 2 else "warning" if entry["yoy"] >= -2 else "danger"
+                    entry["status"] = "Rising" if entry["yoy"] > 2 else "Flat" if entry["yoy"] >= -2 else "Falling"
+
+        elif nid == "inventory":
+            mos = sale.get("monthsOfSupply")
+            if mos is not None:
+                entry["value"] = mos
+                entry["badge"] = "success" if mos < 3 else "warning" if mos <= 7 else "danger"
+                entry["status"] = interpret_months_of_supply(mos)
+                if len(months) >= 13:
+                    cur_m  = history[months[-1]].get("monthsOfSupply")
+                    prev_m = history[months[-13]].get("monthsOfSupply")
+                    if cur_m and prev_m and prev_m != 0:
+                        entry["yoy"] = round((cur_m - prev_m) / prev_m * 100, 1)
+
+        elif nid == "dom":
+            dom = sale.get("averageDaysOnMarket")
+            if dom is not None:
+                entry["value"] = dom
+                entry["badge"] = "success" if dom < 30 else "warning" if dom <= 40 else "info"
+                entry["status"] = interpret_days_on_market(dom)
+                if len(months) >= 13:
+                    cur_d  = history[months[-1]].get("averageDaysOnMarket")
+                    prev_d = history[months[-13]].get("averageDaysOnMarket")
+                    if cur_d and prev_d and prev_d != 0:
+                        entry["yoy"] = round((cur_d - prev_d) / prev_d * 100, 1)
+
+        elif nid == "prices":
+            price = sale.get("medianPrice")
+            if price is not None:
+                entry["value"] = price
+                if len(months) >= 13:
+                    cur_p  = history[months[-1]].get("medianPrice")
+                    prev_p = history[months[-13]].get("medianPrice")
+                    if cur_p and prev_p and prev_p != 0:
+                        yoy = round((cur_p - prev_p) / prev_p * 100, 1)
+                        entry["yoy"]   = yoy
+                        entry["badge"] = "success" if yoy > 3 else "warning" if yoy >= 0 else "danger"
+                        entry["status"] = f"{'↑' if yoy > 0 else '↓'} {abs(yoy):.1f}% YoY"
+
+        result.append(entry)
+    return result
+
+
 # ── Convenience: interpret a market stats dict from the RentCast API ──────────
 
 def interpret_market(data):

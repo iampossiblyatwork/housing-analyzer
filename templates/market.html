@@ -1,333 +1,577 @@
 {% extends "base.html" %}
-{% block title %}Market — {{ zip_code }}{% endblock %}
-{% block page_title %}Market Analysis — {{ zip_code }}{% endblock %}
+{% block title %}Market Analysis — {{ zip_code }}{% endblock %}
+{% block page_title %}Market Analysis{% endblock %}
+
+{% macro badge(color, text) %}
+  {% set cls = {
+    "success":   "bg-emerald-50 text-emerald-700 border-emerald-200",
+    "warning":   "bg-amber-50 text-amber-700 border-amber-200",
+    "danger":    "bg-red-50 text-red-700 border-red-200",
+    "info":      "bg-blue-50 text-blue-700 border-blue-200",
+    "secondary": "bg-slate-50 text-slate-600 border-slate-200",
+  } %}
+  <span class="inline-flex items-center px-2 py-0.5 rounded text-label-sm border {{ cls[color] | default('bg-slate-50 text-slate-600 border-slate-200') }}">{{ text }}</span>
+{% endmacro %}
+
+{% macro delta_chip(yoy) %}
+  {% if yoy is not none %}
+    {% if yoy > 0 %}
+      <span class="inline-flex items-center gap-0.5 text-emerald-700 text-label-sm font-semibold">
+        <span class="material-symbols-outlined" style="font-size:14px">arrow_upward</span>{{ yoy }}%
+      </span>
+    {% elif yoy < 0 %}
+      <span class="inline-flex items-center gap-0.5 text-red-600 text-label-sm font-semibold">
+        <span class="material-symbols-outlined" style="font-size:14px">arrow_downward</span>{{ yoy | abs }}%
+      </span>
+    {% else %}
+      <span class="text-on-surface-variant text-label-sm">—</span>
+    {% endif %}
+  {% endif %}
+{% endmacro %}
 
 {% block topbar_right %}
-<form action="/market" method="get" class="flex items-center gap-2">
-  <input type="text" name="zip" value="{{ zip_code }}"
-         class="border border-outline-variant rounded-lg px-3 py-1.5 text-label-md bg-white focus:outline-none focus:ring-2 focus:ring-secondary/30 w-28">
-  <select name="history" class="border border-outline-variant rounded-lg px-2 py-1.5 text-label-sm bg-white focus:outline-none focus:ring-2 focus:ring-secondary/30">
-    <option value="6"  {{ 'selected' if history_range==6  }}>6 mo</option>
-    <option value="12" {{ 'selected' if history_range==12 }}>12 mo</option>
-    <option value="24" {{ 'selected' if history_range==24 }}>24 mo</option>
-  </select>
-  <button type="submit" class="px-3 py-1.5 bg-secondary text-white text-label-sm rounded-lg hover:bg-secondary/90 transition-colors">
-    Update
-  </button>
+<form method="get" class="flex items-center gap-2">
+  <input name="zip" value="{{ zip_code }}" placeholder="ZIP code"
+         class="w-32 px-3 py-1.5 text-label-md border border-outline-variant rounded bg-white focus:outline-none focus:border-secondary">
+  <button type="submit" class="px-3 py-1.5 bg-secondary text-white text-label-md rounded hover:bg-blue-700">Go</button>
 </form>
 {% endblock %}
 
-{% macro badge(color, text) %}
-{% if color == "success" %}
-<span class="inline-flex items-center px-2 py-0.5 rounded-full text-label-sm bg-emerald-50 text-emerald-700 border border-emerald-200">{{ text }}</span>
-{% elif color == "warning" %}
-<span class="inline-flex items-center px-2 py-0.5 rounded-full text-label-sm bg-amber-50 text-amber-700 border border-amber-200">{{ text }}</span>
-{% elif color == "danger" %}
-<span class="inline-flex items-center px-2 py-0.5 rounded-full text-label-sm bg-red-50 text-red-700 border border-red-200">{{ text }}</span>
-{% elif color == "info" %}
-<span class="inline-flex items-center px-2 py-0.5 rounded-full text-label-sm bg-blue-50 text-secondary border border-blue-200">{{ text }}</span>
-{% else %}
-<span class="inline-flex items-center px-2 py-0.5 rounded-full text-label-sm bg-surface-container text-on-surface-variant border border-outline-variant">{{ text }}</span>
-{% endif %}
-{% endmacro %}
-
 {% block content %}
 
-<!-- Last updated -->
-<p class="text-label-sm text-outline mb-stack-md">
-  Last updated: {{ data.saleData.lastUpdatedDate[:10] if data.saleData and data.saleData.lastUpdatedDate else 'N/A' }}
-</p>
+{# ── KPI strip ───────────────────────────────────────────────────────────── #}
+{% set sale  = data.get("saleData", {}) %}
+{% set rent  = data.get("rentalData", {}) %}
 
-<!-- ── Tab bar ─────────────────────────────────────────────────────────────── -->
+<div class="mb-stack-lg">
+  <div class="flex items-baseline gap-3 mb-stack-md">
+    <h2 class="text-headline-md text-primary">ZIP {{ zip_code }}</h2>
+    <span class="text-on-surface-variant text-body-md">24-month market snapshot</span>
+  </div>
+
+  <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+
+    {% if sale.get("medianPrice") %}
+    {% set mp_yoy = sale_chart.prices_yoy[-1] if sale_chart.prices_yoy else none %}
+    <div class="bg-white border border-outline-variant rounded-lg p-4 hover:shadow-card transition-shadow">
+      <div class="flex items-center gap-1.5 mb-2">
+        <span class="material-symbols-outlined text-on-surface-variant" style="font-size:16px">home</span>
+        <span class="text-label-sm text-on-surface-variant uppercase tracking-wide">Median Sale Price</span>
+      </div>
+      <div class="text-headline-md font-bold text-primary tabular-nums">${{ "{:,.0f}".format(sale.medianPrice) }}</div>
+      {% if mp_yoy is not none %}<div class="mt-1 flex items-center gap-1">{{ delta_chip(mp_yoy) }}<span class="text-label-sm text-on-surface-variant">YoY</span></div>{% endif %}
+    </div>
+    {% endif %}
+
+    {% if sale.get("averageDaysOnMarket") %}
+    {% set dom_yoy = sale_chart.dom_yoy[-1] if sale_chart.dom_yoy else none %}
+    <div class="bg-white border border-outline-variant rounded-lg p-4 hover:shadow-card transition-shadow">
+      <div class="flex items-center gap-1.5 mb-2">
+        <span class="material-symbols-outlined text-on-surface-variant" style="font-size:16px">schedule</span>
+        <span class="text-label-sm text-on-surface-variant uppercase tracking-wide">Avg Days on Market</span>
+      </div>
+      <div class="text-headline-md font-bold text-primary tabular-nums">{{ "{:.0f}".format(sale.averageDaysOnMarket) }} days</div>
+      {% if dom_yoy is not none %}<div class="mt-1 flex items-center gap-1">{{ delta_chip(dom_yoy) }}<span class="text-label-sm text-on-surface-variant">YoY</span></div>{% endif %}
+    </div>
+    {% endif %}
+
+    {% if sale.get("monthsOfSupply") %}
+    <div class="bg-white border border-outline-variant rounded-lg p-4 hover:shadow-card transition-shadow">
+      <div class="flex items-center gap-1.5 mb-2">
+        <span class="material-symbols-outlined text-on-surface-variant" style="font-size:16px">inventory_2</span>
+        <span class="text-label-sm text-on-surface-variant uppercase tracking-wide">Months of Supply</span>
+      </div>
+      <div class="text-headline-md font-bold text-primary tabular-nums">{{ "{:.1f}".format(sale.monthsOfSupply) }} mo</div>
+      <div class="mt-1 text-label-sm text-on-surface-variant">{{ metrics.interpret_months_of_supply(sale.monthsOfSupply) }}</div>
+    </div>
+    {% endif %}
+
+    {% if rent.get("medianRent") %}
+    {% set mr_yoy = rent_chart.prices_yoy[-1] if rent_chart.prices_yoy else none %}
+    <div class="bg-white border border-outline-variant rounded-lg p-4 hover:shadow-card transition-shadow">
+      <div class="flex items-center gap-1.5 mb-2">
+        <span class="material-symbols-outlined text-on-surface-variant" style="font-size:16px">apartment</span>
+        <span class="text-label-sm text-on-surface-variant uppercase tracking-wide">Median Rent</span>
+      </div>
+      <div class="text-headline-md font-bold text-primary tabular-nums">${{ "{:,.0f}".format(rent.medianRent) }}/mo</div>
+      {% if mr_yoy is not none %}<div class="mt-1 flex items-center gap-1">{{ delta_chip(mr_yoy) }}<span class="text-label-sm text-on-surface-variant">YoY</span></div>{% endif %}
+    </div>
+    {% endif %}
+
+    {% if sale.get("totalListings") %}
+    {% set tl_yoy = sale_chart.listings_yoy[-1] if sale_chart.listings_yoy else none %}
+    <div class="bg-white border border-outline-variant rounded-lg p-4 hover:shadow-card transition-shadow">
+      <div class="flex items-center gap-1.5 mb-2">
+        <span class="material-symbols-outlined text-on-surface-variant" style="font-size:16px">format_list_bulleted</span>
+        <span class="text-label-sm text-on-surface-variant uppercase tracking-wide">Active Listings</span>
+      </div>
+      <div class="text-headline-md font-bold text-primary tabular-nums">{{ "{:,}".format(sale.totalListings) }}</div>
+      {% if tl_yoy is not none %}<div class="mt-1 flex items-center gap-1">{{ delta_chip(tl_yoy) }}<span class="text-label-sm text-on-surface-variant">YoY</span></div>{% endif %}
+    </div>
+    {% endif %}
+
+  </div>
+</div>
+
+{# ── Composite signals strip ─────────────────────────────────────────────── #}
+{% if signals %}
+<div class="flex flex-wrap gap-2 mb-stack-lg">
+  {% for s in signals %}
+    {% set border = {"success":"border-emerald-300","warning":"border-amber-300","danger":"border-red-300","info":"border-blue-300","secondary":"border-slate-200"} %}
+    {% set bg     = {"success":"bg-emerald-50","warning":"bg-amber-50","danger":"bg-red-50","info":"bg-blue-50","secondary":"bg-slate-50"} %}
+    <div class="flex items-start gap-2 px-3 py-2 rounded border-l-4 {{ border[s.color] }} {{ bg[s.color] }}">
+      <span class="material-symbols-outlined filled shrink-0 mt-0.5
+        {% if s.color == 'success' %}text-emerald-600{% elif s.color == 'warning' %}text-amber-600{% elif s.color == 'danger' %}text-red-600{% else %}text-blue-600{% endif %}"
+        style="font-size:16px">
+        {% if s.color == 'success' %}trending_up{% elif s.color == 'danger' %}trending_down{% elif s.color == 'warning' %}warning{% else %}info{% endif %}
+      </span>
+      <div>
+        <div class="text-label-md font-semibold text-on-surface">{{ s.pattern }}</div>
+        <div class="text-label-sm text-on-surface-variant">{{ s.detail }}</div>
+      </div>
+    </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{# ── Tab navigation ──────────────────────────────────────────────────────── #}
 <div class="border-b border-outline-variant mb-stack-lg">
-  <nav class="flex gap-0" id="marketTabs">
-    <button data-tab="sale"     class="tab-btn px-4 py-2.5 text-label-md border-b-2 border-secondary text-secondary -mb-px">Sale Market</button>
-    <button data-tab="rental"   class="tab-btn px-4 py-2.5 text-label-md border-b-2 border-transparent text-on-surface-variant hover:text-primary">Rental Market</button>
-    <button data-tab="insights" class="tab-btn px-4 py-2.5 text-label-md border-b-2 border-transparent text-on-surface-variant hover:text-primary">
-      Insights
-      {% if signals and signals[0].color != "secondary" %}
-      <span class="ml-1 inline-block w-2 h-2 rounded-full bg-amber-400"></span>
-      {% endif %}
+  <nav class="flex gap-0 -mb-px overflow-x-auto">
+    {% for tid, tlabel in [("price","Price Trends"),("supply","Supply & Demand"),("rental","Rental Market"),("macro","Macro Context"),("insights","Insights")] %}
+    <button onclick="switchTab('{{ tid }}')" id="tab-btn-{{ tid }}"
+      class="tab-btn px-5 py-3 text-label-md border-b-2 transition-colors whitespace-nowrap
+             {{ 'border-secondary text-secondary font-semibold' if loop.first else 'border-transparent text-on-surface-variant hover:text-primary hover:border-outline' }}">
+      {{ tlabel }}
     </button>
-    <button data-tab="bytypes"  class="tab-btn px-4 py-2.5 text-label-md border-b-2 border-transparent text-on-surface-variant hover:text-primary">By Property Type</button>
+    {% endfor %}
   </nav>
 </div>
 
-<!-- ── Sale Tab ────────────────────────────────────────────────────────────── -->
-<div id="tab-sale" class="tab-pane">
-  {% set s = data.saleData %}
-  {% if s %}
-  <!-- KPI row -->
-  <div class="grid grid-cols-2 md:grid-cols-4 gap-gutter mb-stack-lg">
-    <div class="bg-white border border-outline-variant rounded-lg p-stack-md hover:shadow-card transition-shadow">
-      <p class="text-label-sm text-on-surface-variant mb-1">Median Price</p>
-      <p class="text-headline-md text-secondary font-bold">${{ "{:,.0f}".format(s.medianPrice) if s.medianPrice else '—' }}</p>
-    </div>
-    <div class="bg-white border border-outline-variant rounded-lg p-stack-md hover:shadow-card transition-shadow">
-      <p class="text-label-sm text-on-surface-variant mb-1">Avg Price</p>
-      <p class="text-headline-md text-primary font-bold">${{ "{:,.0f}".format(s.averagePrice) if s.averagePrice else '—' }}</p>
-    </div>
-    <div class="bg-white border border-outline-variant rounded-lg p-stack-md hover:shadow-card transition-shadow">
-      <p class="text-label-sm text-on-surface-variant mb-1">Median DOM</p>
-      <p class="text-headline-md text-amber-600 font-bold">{{ s.medianDaysOnMarket or '—' }}</p>
-    </div>
-    <div class="bg-white border border-outline-variant rounded-lg p-stack-md hover:shadow-card transition-shadow">
-      <p class="text-label-sm text-on-surface-variant mb-1">Total Listings</p>
-      <p class="text-headline-md text-on-tertiary-container font-bold">{{ s.totalListings or '—' }}</p>
-    </div>
-  </div>
-  <!-- Charts -->
-  <div class="grid grid-cols-1 lg:grid-cols-2 gap-gutter">
-    <div class="bg-white border border-outline-variant rounded-lg p-stack-md">
-      <p class="text-label-sm text-on-surface-variant uppercase tracking-wider mb-3">Median Sale Price</p>
-      <canvas id="salePriceChart"></canvas>
-    </div>
-    <div class="bg-white border border-outline-variant rounded-lg p-stack-md">
-      <p class="text-label-sm text-on-surface-variant uppercase tracking-wider mb-3">Avg Days on Market</p>
-      <canvas id="saleDomChart"></canvas>
-    </div>
-  </div>
-  {% else %}
-  <p class="text-on-surface-variant">No sale data available.</p>
-  {% endif %}
-</div>
+{# ── Price Trends tab ────────────────────────────────────────────────────── #}
+<div id="tab-price" class="tab-panel">
+  <div class="grid grid-cols-1 xl:grid-cols-2 gap-stack-md mb-stack-md">
 
-<!-- ── Rental Tab ─────────────────────────────────────────────────────────── -->
-<div id="tab-rental" class="tab-pane hidden">
-  {% set r = data.rentalData %}
-  {% if r %}
-  <div class="grid grid-cols-2 md:grid-cols-4 gap-gutter mb-stack-lg">
-    <div class="bg-white border border-outline-variant rounded-lg p-stack-md hover:shadow-card transition-shadow">
-      <p class="text-label-sm text-on-surface-variant mb-1">Median Rent/mo</p>
-      <p class="text-headline-md text-secondary font-bold">${{ "{:,.0f}".format(r.medianRent) if r.medianRent else '—' }}</p>
+    <div class="bg-white border border-outline-variant rounded-lg p-5">
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <h3 class="text-label-md font-semibold text-primary">Median Sale Price</h3>
+          <p class="text-label-sm text-on-surface-variant">24 months · 12-mo moving avg</p>
+        </div>
+        <div class="flex items-center gap-3 text-label-sm text-on-surface-variant">
+          <span class="flex items-center gap-1.5"><span class="inline-block w-4 h-0.5 bg-secondary"></span>Price</span>
+          <span class="flex items-center gap-1.5"><span class="inline-block w-4 border-t-2 border-dashed border-amber-500"></span>12-mo MA</span>
+        </div>
+      </div>
+      <div class="relative h-56"><canvas id="priceChart"></canvas></div>
     </div>
-    <div class="bg-white border border-outline-variant rounded-lg p-stack-md hover:shadow-card transition-shadow">
-      <p class="text-label-sm text-on-surface-variant mb-1">Avg Rent/mo</p>
-      <p class="text-headline-md text-primary font-bold">${{ "{:,.0f}".format(r.averageRent) if r.averageRent else '—' }}</p>
-    </div>
-    <div class="bg-white border border-outline-variant rounded-lg p-stack-md hover:shadow-card transition-shadow">
-      <p class="text-label-sm text-on-surface-variant mb-1">Median DOM</p>
-      <p class="text-headline-md text-amber-600 font-bold">{{ r.medianDaysOnMarket or '—' }}</p>
-    </div>
-    <div class="bg-white border border-outline-variant rounded-lg p-stack-md hover:shadow-card transition-shadow">
-      <p class="text-label-sm text-on-surface-variant mb-1">Total Listings</p>
-      <p class="text-headline-md text-on-tertiary-container font-bold">{{ r.totalListings or '—' }}</p>
-    </div>
-  </div>
-  <div class="grid grid-cols-1 lg:grid-cols-2 gap-gutter">
-    <div class="bg-white border border-outline-variant rounded-lg p-stack-md">
-      <p class="text-label-sm text-on-surface-variant uppercase tracking-wider mb-3">Median Rent / mo</p>
-      <canvas id="rentPriceChart"></canvas>
-    </div>
-    <div class="bg-white border border-outline-variant rounded-lg p-stack-md">
-      <p class="text-label-sm text-on-surface-variant uppercase tracking-wider mb-3">Rental Avg Days on Market</p>
-      <canvas id="rentDomChart"></canvas>
-    </div>
-  </div>
-  {% else %}
-  <p class="text-on-surface-variant">No rental data available.</p>
-  {% endif %}
-</div>
 
-<!-- ── Insights Tab ───────────────────────────────────────────────────────── -->
-<div id="tab-insights" class="tab-pane hidden">
+    <div class="bg-white border border-outline-variant rounded-lg p-5">
+      <div class="mb-4">
+        <h3 class="text-label-md font-semibold text-primary">Price — Year-over-Year Change</h3>
+        <p class="text-label-sm text-on-surface-variant">Monthly % vs same month prior year</p>
+      </div>
+      <div class="relative h-56"><canvas id="priceYoyChart"></canvas></div>
+    </div>
 
-  <!-- Market signal cards -->
+  </div>
+
   {% if interpretations %}
-  <div class="grid grid-cols-2 md:grid-cols-4 gap-gutter mb-stack-lg">
-    {% for key, m in interpretations.items() %}
-    <div class="bg-white border border-outline-variant rounded-lg p-stack-md">
-      <p class="text-label-sm text-on-surface-variant mb-1 uppercase tracking-wider">{{ m.label }}</p>
-      <p class="text-headline-md font-bold text-primary mb-2">{{ m.value }}</p>
-      {{ badge(m.badge, m.interpretation) }}
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+    {% for key, interp in interpretations.items() %}
+    <div class="bg-white border border-outline-variant rounded-lg p-4">
+      <div class="flex items-center justify-between mb-2">
+        <span class="text-label-sm text-on-surface-variant uppercase tracking-wide">{{ interp.label }}</span>
+        {{ badge(interp.badge, interp.value) }}
+      </div>
+      <p class="text-label-sm text-on-surface">{{ interp.interpretation }}</p>
     </div>
     {% endfor %}
   </div>
   {% endif %}
+</div>
 
-  <!-- Composite signals -->
-  <div class="mb-stack-lg">
-    <h3 class="text-label-md font-semibold text-primary uppercase tracking-wider mb-3">Composite Signals ({{ history_range }}-month history)</h3>
-    <div class="space-y-3">
-      {% for sig in signals %}
-      <div class="flex gap-3 bg-white border border-outline-variant rounded-lg p-stack-md
-                  {% if sig.color == 'danger' %}border-l-4 border-l-red-500{% elif sig.color == 'success' %}border-l-4 border-l-emerald-500{% elif sig.color == 'warning' %}border-l-4 border-l-amber-400{% elif sig.color == 'info' %}border-l-4 border-l-blue-400{% endif %}">
-        <span class="material-symbols-outlined mt-0.5 shrink-0
-                     {% if sig.color == 'danger' %}text-red-600{% elif sig.color == 'success' %}text-emerald-600{% elif sig.color == 'warning' %}text-amber-500{% elif sig.color == 'info' %}text-secondary{% else %}text-outline{% endif %}"
-              style="font-size:20px">
-          {% if sig.color == 'danger' %}trending_down{% elif sig.color == 'success' %}trending_up{% elif sig.color == 'warning' %}warning{% elif sig.color == 'info' %}info{% else %}radio_button_unchecked{% endif %}
-        </span>
+{# ── Supply & Demand tab ─────────────────────────────────────────────────── #}
+<div id="tab-supply" class="tab-panel hidden">
+  <div class="grid grid-cols-1 xl:grid-cols-2 gap-stack-md mb-stack-md">
+    <div class="bg-white border border-outline-variant rounded-lg p-5">
+      <div class="flex items-center justify-between mb-4">
         <div>
-          <p class="text-label-md font-semibold text-primary">{{ sig.pattern }}</p>
-          <p class="text-label-sm text-on-surface-variant mt-0.5">{{ sig.detail }}</p>
+          <h3 class="text-label-md font-semibold text-primary">Days on Market</h3>
+          <p class="text-label-sm text-on-surface-variant italic">DOM is highly seasonal — always compare YoY</p>
         </div>
       </div>
-      {% endfor %}
+      <div class="relative h-56"><canvas id="domChart"></canvas></div>
+    </div>
+    <div class="bg-white border border-outline-variant rounded-lg p-5">
+      <div class="mb-4">
+        <h3 class="text-label-md font-semibold text-primary">Active Listings</h3>
+        <p class="text-label-sm text-on-surface-variant italic">Inventory is seasonal — rising listings ≠ cooling if sales also rising</p>
+      </div>
+      <div class="relative h-56"><canvas id="listingsChart"></canvas></div>
     </div>
   </div>
-
-  <!-- Context notes accordion -->
-  <div class="bg-white border border-outline-variant rounded-lg overflow-hidden">
-    <div class="px-stack-md py-3 border-b border-outline-variant">
-      <h3 class="text-label-md font-semibold text-primary">Analytical Context</h3>
+  <div class="grid grid-cols-1 xl:grid-cols-2 gap-stack-md">
+    <div class="bg-white border border-outline-variant rounded-lg p-5">
+      <div class="mb-4">
+        <h3 class="text-label-md font-semibold text-primary">DOM — Year-over-Year Change</h3>
+      </div>
+      <div class="relative h-44"><canvas id="domYoyChart"></canvas></div>
     </div>
-    <div class="divide-y divide-outline-variant">
-      <details class="group px-stack-md py-3">
-        <summary class="flex justify-between items-center cursor-pointer text-label-md text-on-surface select-none list-none">
-          Rate-Lock-In Effect
-          <span class="material-symbols-outlined text-outline group-open:rotate-180 transition-transform" style="font-size:18px">expand_more</span>
-        </summary>
-        <p class="text-label-sm text-on-surface-variant mt-2 leading-relaxed">The spread between the avg outstanding mortgage rate (~3.8%) and the prevailing market rate suppresses existing-home turnover regardless of price trends — critical context for interpreting low inventory in 2024–2026.</p>
-      </details>
-      <details class="group px-stack-md py-3">
-        <summary class="flex justify-between items-center cursor-pointer text-label-md text-on-surface select-none list-none">
-          Median Price Caveat
-          <span class="material-symbols-outlined text-outline group-open:rotate-180 transition-transform" style="font-size:18px">expand_more</span>
-        </summary>
-        <p class="text-label-sm text-on-surface-variant mt-2 leading-relaxed">Median sale price movement can reflect either appreciation OR compositional shift (more high-end homes selling). Always pair median price with price-per-sq-ft and a repeat-sales index to disentangle the two effects.</p>
-      </details>
-      <details class="group px-stack-md py-3">
-        <summary class="flex justify-between items-center cursor-pointer text-label-md text-on-surface select-none list-none">
-          Inventory Seasonality
-          <span class="material-symbols-outlined text-outline group-open:rotate-180 transition-transform" style="font-size:18px">expand_more</span>
-        </summary>
-        <p class="text-label-sm text-on-surface-variant mt-2 leading-relaxed">Active inventory is highly seasonal — always compare YoY, not month-over-month. Rising inventory + flat/rising sales = healthy expansion. Rising inventory + falling sales = classic early signal of a market turn.</p>
-      </details>
-      <details class="group px-stack-md py-3">
-        <summary class="flex justify-between items-center cursor-pointer text-label-md text-on-surface select-none list-none">
-          Mortgage Rate Sensitivity
-          <span class="material-symbols-outlined text-outline group-open:rotate-180 transition-transform" style="font-size:18px">expand_more</span>
-        </summary>
-        <p class="text-label-sm text-on-surface-variant mt-2 leading-relaxed">Each 1% increase in mortgage rates reduces purchasing power by approximately 10–11%. Track the 30-year fixed conforming rate alongside the 10-year Treasury — the spread between them widens in periods of credit stress.</p>
-      </details>
+    <div class="bg-white border border-outline-variant rounded-lg p-5">
+      <div class="mb-4">
+        <h3 class="text-label-md font-semibold text-primary">Listings — Year-over-Year Change</h3>
+      </div>
+      <div class="relative h-44"><canvas id="listingsYoyChart"></canvas></div>
     </div>
   </div>
 </div>
 
-<!-- ── By Property Type Tab ───────────────────────────────────────────────── -->
-<div id="tab-bytypes" class="tab-pane hidden space-y-stack-lg">
-  {% if data.saleData and data.saleData.dataByPropertyType %}
-  <div class="bg-white border border-outline-variant rounded-lg overflow-hidden">
-    <div class="px-stack-md py-3 border-b border-outline-variant bg-surface-container-low">
-      <h3 class="text-label-md font-semibold text-primary">Sale — By Property Type</h3>
+{# ── Rental tab ──────────────────────────────────────────────────────────── #}
+<div id="tab-rental" class="tab-panel hidden">
+  <div class="grid grid-cols-1 xl:grid-cols-2 gap-stack-md mb-stack-md">
+    <div class="bg-white border border-outline-variant rounded-lg p-5">
+      <div class="mb-4">
+        <h3 class="text-label-md font-semibold text-primary">Median Rent</h3>
+        <p class="text-label-sm text-on-surface-variant">24 months · 12-mo moving avg</p>
+      </div>
+      <div class="relative h-56"><canvas id="rentChart"></canvas></div>
     </div>
-    <div class="overflow-x-auto">
-      <table class="w-full text-left">
-        <thead class="bg-surface-container-low border-b border-outline-variant">
-          <tr>
-            <th class="px-gutter py-3 text-label-sm text-outline">TYPE</th>
-            <th class="px-gutter py-3 text-label-sm text-outline text-right">MEDIAN PRICE</th>
-            <th class="px-gutter py-3 text-label-sm text-outline text-right">AVG $/SQFT</th>
-            <th class="px-gutter py-3 text-label-sm text-outline text-right">AVG DOM</th>
-            <th class="px-gutter py-3 text-label-sm text-outline text-right">LISTINGS</th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-outline-variant">
-          {% for pt in data.saleData.dataByPropertyType %}
-          <tr class="hover:bg-surface-container-low transition-colors">
-            <td class="px-gutter py-3 text-label-md font-medium">{{ pt.propertyType }}</td>
-            <td class="px-gutter py-3 text-data-tabular text-right">${{ "{:,.0f}".format(pt.medianPrice) if pt.medianPrice else '—' }}</td>
-            <td class="px-gutter py-3 text-data-tabular text-right">{{ "${:,.2f}".format(pt.medianPricePerSquareFoot) if pt.medianPricePerSquareFoot else '—' }}</td>
-            <td class="px-gutter py-3 text-data-tabular text-right">{{ pt.medianDaysOnMarket or '—' }}</td>
-            <td class="px-gutter py-3 text-data-tabular text-right">{{ pt.totalListings or '—' }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+    <div class="bg-white border border-outline-variant rounded-lg p-5">
+      <div class="mb-4">
+        <h3 class="text-label-md font-semibold text-primary">Rent — Year-over-Year Change</h3>
+      </div>
+      <div class="relative h-56"><canvas id="rentYoyChart"></canvas></div>
     </div>
   </div>
-  {% endif %}
-  {% if data.rentalData and data.rentalData.dataByPropertyType %}
-  <div class="bg-white border border-outline-variant rounded-lg overflow-hidden">
-    <div class="px-stack-md py-3 border-b border-outline-variant bg-surface-container-low">
-      <h3 class="text-label-md font-semibold text-primary">Rental — By Property Type</h3>
+
+  {% if rent %}
+  <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+    {% if rent.get("medianRent") %}
+    <div class="bg-white border border-outline-variant rounded-lg p-4">
+      <div class="text-label-sm text-on-surface-variant uppercase tracking-wide mb-1">Median Rent</div>
+      <div class="text-headline-md font-bold text-primary">${{ "{:,.0f}".format(rent.medianRent) }}</div>
     </div>
-    <div class="overflow-x-auto">
-      <table class="w-full text-left">
-        <thead class="bg-surface-container-low border-b border-outline-variant">
-          <tr>
-            <th class="px-gutter py-3 text-label-sm text-outline">TYPE</th>
-            <th class="px-gutter py-3 text-label-sm text-outline text-right">MEDIAN RENT</th>
-            <th class="px-gutter py-3 text-label-sm text-outline text-right">AVG $/SQFT</th>
-            <th class="px-gutter py-3 text-label-sm text-outline text-right">AVG DOM</th>
-            <th class="px-gutter py-3 text-label-sm text-outline text-right">LISTINGS</th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-outline-variant">
-          {% for pt in data.rentalData.dataByPropertyType %}
-          <tr class="hover:bg-surface-container-low transition-colors">
-            <td class="px-gutter py-3 text-label-md font-medium">{{ pt.propertyType }}</td>
-            <td class="px-gutter py-3 text-data-tabular text-right">${{ "{:,.0f}".format(pt.medianRent) if pt.medianRent else '—' }}</td>
-            <td class="px-gutter py-3 text-data-tabular text-right">{{ "${:,.2f}".format(pt.medianRentPerSquareFoot) if pt.medianRentPerSquareFoot else '—' }}</td>
-            <td class="px-gutter py-3 text-data-tabular text-right">{{ pt.medianDaysOnMarket or '—' }}</td>
-            <td class="px-gutter py-3 text-data-tabular text-right">{{ pt.totalListings or '—' }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+    {% endif %}
+    {% if rent.get("averageDaysOnMarket") %}
+    <div class="bg-white border border-outline-variant rounded-lg p-4">
+      <div class="text-label-sm text-on-surface-variant uppercase tracking-wide mb-1">Rental DOM</div>
+      <div class="text-headline-md font-bold text-primary">{{ "{:.0f}".format(rent.averageDaysOnMarket) }} days</div>
     </div>
+    {% endif %}
+    {% if rent.get("totalListings") %}
+    <div class="bg-white border border-outline-variant rounded-lg p-4">
+      <div class="text-label-sm text-on-surface-variant uppercase tracking-wide mb-1">Rental Listings</div>
+      <div class="text-headline-md font-bold text-primary">{{ "{:,}".format(rent.totalListings) }}</div>
+    </div>
+    {% endif %}
+    {% if sale.get("medianPrice") and rent.get("medianRent") and rent.medianRent > 0 %}
+    <div class="bg-white border border-outline-variant rounded-lg p-4">
+      <div class="text-label-sm text-on-surface-variant uppercase tracking-wide mb-1">Price-to-Rent</div>
+      <div class="text-headline-md font-bold text-primary">{{ "{:.1f}".format(sale.medianPrice / (rent.medianRent * 12)) }}×</div>
+    </div>
+    {% endif %}
   </div>
   {% endif %}
+</div>
+
+{# ── Macro Context tab ───────────────────────────────────────────────────── #}
+<div id="tab-macro" class="tab-panel hidden">
+  {% if not fred_configured %}
+  <div class="bg-blue-50 border border-blue-200 rounded-lg p-6 mb-stack-md flex items-start gap-3">
+    <span class="material-symbols-outlined text-blue-500 mt-0.5" style="font-size:20px">info</span>
+    <div>
+      <p class="text-label-md font-semibold text-blue-800 mb-1">FRED API not configured</p>
+      <p class="text-body-md text-blue-700">Add a free <code class="bg-blue-100 px-1 rounded">FRED_API_KEY</code> to your <code class="bg-blue-100 px-1 rounded">.env</code> file to see mortgage rates, unemployment, CPI, and builder confidence alongside local market data.</p>
+      <p class="text-label-sm text-blue-600 mt-2">Get a free key: <strong>fred.stlouisfed.org/docs/api/api_key.html</strong></p>
+    </div>
+  </div>
+  {% else %}
+  <div class="grid grid-cols-1 xl:grid-cols-2 gap-stack-md mb-stack-md">
+    {% if macro.get("MORTGAGE30US") %}
+    <div class="bg-white border border-outline-variant rounded-lg p-5">
+      <div class="flex items-center justify-between mb-3">
+        <div>
+          <h3 class="text-label-md font-semibold text-primary">30-Year Fixed Mortgage Rate</h3>
+          <p class="text-label-sm text-on-surface-variant">FRED: MORTGAGE30US · Weekly</p>
+        </div>
+        <div class="text-right">
+          <div class="text-headline-md font-bold text-primary tabular-nums">{{ macro.MORTGAGE30US.latest.value }}%</div>
+          <div class="text-label-sm text-on-surface-variant">{{ macro.MORTGAGE30US.latest.date }}</div>
+        </div>
+      </div>
+      <div class="relative h-44"><canvas id="mortgageChart"></canvas></div>
+      <p class="mt-2 text-label-sm text-on-surface-variant">Each 1% rate increase reduces purchasing power ~10–11%.</p>
+    </div>
+    {% endif %}
+    {% if macro.get("UNRATE") %}
+    <div class="bg-white border border-outline-variant rounded-lg p-5">
+      <div class="flex items-center justify-between mb-3">
+        <div>
+          <h3 class="text-label-md font-semibold text-primary">Unemployment Rate</h3>
+          <p class="text-label-sm text-on-surface-variant">FRED: UNRATE · Monthly</p>
+        </div>
+        <div class="text-right">
+          <div class="text-headline-md font-bold text-primary tabular-nums">{{ macro.UNRATE.latest.value }}%</div>
+          <div class="text-label-sm text-on-surface-variant">{{ macro.UNRATE.latest.date }}</div>
+        </div>
+      </div>
+      <div class="relative h-44"><canvas id="unemployChart"></canvas></div>
+    </div>
+    {% endif %}
+    {% if macro.get("CPIAUCSL") %}
+    <div class="bg-white border border-outline-variant rounded-lg p-5">
+      <div class="flex items-center justify-between mb-3">
+        <div>
+          <h3 class="text-label-md font-semibold text-primary">CPI (Seasonally Adjusted)</h3>
+          <p class="text-label-sm text-on-surface-variant">FRED: CPIAUCSL · Monthly</p>
+        </div>
+        <div class="text-right">
+          <div class="text-headline-md font-bold text-primary tabular-nums">{{ macro.CPIAUCSL.latest.value }}</div>
+          <div class="text-label-sm text-on-surface-variant">{{ macro.CPIAUCSL.latest.date }}</div>
+        </div>
+      </div>
+      <div class="relative h-44"><canvas id="cpiChart"></canvas></div>
+    </div>
+    {% endif %}
+    {% if macro.get("DGS10") %}
+    <div class="bg-white border border-outline-variant rounded-lg p-5">
+      <div class="flex items-center justify-between mb-3">
+        <div>
+          <h3 class="text-label-md font-semibold text-primary">10-Year Treasury Yield</h3>
+          <p class="text-label-sm text-on-surface-variant">FRED: DGS10 · Daily</p>
+        </div>
+        <div class="text-right">
+          <div class="text-headline-md font-bold text-primary tabular-nums">{{ macro.DGS10.latest.value }}%</div>
+          <div class="text-label-sm text-on-surface-variant">{{ macro.DGS10.latest.date }}</div>
+        </div>
+      </div>
+      <div class="relative h-44"><canvas id="treasuryChart"></canvas></div>
+      <p class="mt-2 text-label-sm text-on-surface-variant">Spread vs. mortgage rate widens in credit stress periods.</p>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% if census_configured and demographics %}
+  <div class="mt-stack-md">
+    <h3 class="text-label-md font-semibold text-primary mb-3">
+      ZIP {{ zip_code }} Demographics
+      <span class="text-label-sm text-on-surface-variant font-normal ml-1">Census ACS 5-year estimates</span>
+    </h3>
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      {% if demographics.get("median_income") %}
+      <div class="bg-white border border-outline-variant rounded-lg p-4">
+        <div class="text-label-sm text-on-surface-variant uppercase tracking-wide mb-1">Median Income</div>
+        <div class="text-headline-md font-bold text-primary">${{ "{:,.0f}".format(demographics.median_income) }}</div>
+      </div>
+      {% endif %}
+      {% if demographics.get("population") %}
+      <div class="bg-white border border-outline-variant rounded-lg p-4">
+        <div class="text-label-sm text-on-surface-variant uppercase tracking-wide mb-1">Population</div>
+        <div class="text-headline-md font-bold text-primary">{{ "{:,.0f}".format(demographics.population) }}</div>
+      </div>
+      {% endif %}
+      {% if demographics.get("housing_units") %}
+      <div class="bg-white border border-outline-variant rounded-lg p-4">
+        <div class="text-label-sm text-on-surface-variant uppercase tracking-wide mb-1">Housing Units</div>
+        <div class="text-headline-md font-bold text-primary">{{ "{:,.0f}".format(demographics.housing_units) }}</div>
+      </div>
+      {% endif %}
+      {% if demographics.get("vacancy_rate") is not none %}
+      <div class="bg-white border border-outline-variant rounded-lg p-4">
+        <div class="text-label-sm text-on-surface-variant uppercase tracking-wide mb-1">Vacancy Rate</div>
+        <div class="text-headline-md font-bold text-primary">{{ demographics.vacancy_rate }}%</div>
+      </div>
+      {% endif %}
+    </div>
+    {% if demographics.get("median_income") and sale.get("medianPrice") %}
+    {% set pti = (sale.medianPrice / demographics.median_income) | round(1) %}
+    <div class="mt-3 bg-white border border-outline-variant rounded-lg p-4 flex items-center gap-4">
+      <div>
+        <div class="text-label-sm text-on-surface-variant uppercase tracking-wide mb-1">Price-to-Income Ratio</div>
+        <div class="text-headline-md font-bold text-primary">{{ pti }}×</div>
+        <div class="text-label-sm text-on-surface-variant mt-1">{{ metrics.interpret_price_to_income(pti | float) }}</div>
+      </div>
+      <div class="text-label-sm text-on-surface-variant border-l border-outline-variant pl-4 max-w-xs">
+        U.S. historical norm: 3–4×. Sustained readings above 5× signal affordability stress and elevated correction risk.
+      </div>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+
+{# ── Insights tab ────────────────────────────────────────────────────────── #}
+<div id="tab-insights" class="tab-panel hidden">
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-stack-md mb-stack-md">
+    <div class="space-y-3">
+      <h3 class="text-label-md font-semibold text-primary">Metric Interpretations</h3>
+      {% for key, interp in interpretations.items() %}
+      <div class="bg-white border border-outline-variant rounded-lg p-4 flex items-start justify-between gap-3">
+        <div class="min-w-0">
+          <div class="text-label-md font-medium text-on-surface">{{ interp.label }}</div>
+          <div class="text-label-sm text-on-surface-variant mt-0.5">{{ interp.interpretation }}</div>
+        </div>
+        <div class="shrink-0">{{ badge(interp.badge, interp.value) }}</div>
+      </div>
+      {% else %}
+      <p class="text-body-md text-on-surface-variant">Not enough data for interpretations.</p>
+      {% endfor %}
+    </div>
+
+    <div>
+      <h3 class="text-label-md font-semibold text-primary mb-3">Composite Market Signals</h3>
+      <div class="space-y-3 mb-4">
+        {% for s in signals %}
+        {% set border = {"success":"border-emerald-400","warning":"border-amber-400","danger":"border-red-400","info":"border-blue-400","secondary":"border-slate-300"} %}
+        {% set bg     = {"success":"bg-emerald-50","warning":"bg-amber-50","danger":"bg-red-50","info":"bg-blue-50","secondary":"bg-slate-50"} %}
+        <div class="border-l-4 {{ border[s.color] }} {{ bg[s.color] }} rounded-r-lg p-4">
+          <div class="text-label-md font-semibold text-on-surface">{{ s.pattern }}</div>
+          <div class="text-label-sm text-on-surface-variant mt-1">{{ s.detail }}</div>
+        </div>
+        {% endfor %}
+      </div>
+
+      <div class="p-4 bg-white border border-outline-variant rounded-lg">
+        <details>
+          <summary class="text-label-md font-semibold text-primary cursor-pointer select-none">Analytical Patterns Reference</summary>
+          <div class="mt-3 space-y-2">
+            {% for p in metrics.ANALYTICAL_PATTERNS %}
+            <div class="text-label-sm">
+              <span class="font-medium text-on-surface">{{ p.pattern }}</span>
+              <span class="text-on-surface-variant"> — {{ p.signal }}</span>
+            </div>
+            {% endfor %}
+          </div>
+        </details>
+      </div>
+    </div>
+  </div>
+
+  <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-start gap-2">
+    <span class="material-symbols-outlined text-blue-500 shrink-0" style="font-size:18px">info</span>
+    <p class="text-label-sm text-blue-800">{{ metrics.INVENTORY_INTERPRETATION }}</p>
+  </div>
 </div>
 
 {% endblock %}
 
 {% block scripts %}
 <script>
-const saleChart = {{ sale_chart | tojson }};
-const rentChart = {{ rent_chart | tojson }};
+const saleLabels    = {{ sale_chart.labels | tojson }};
+const salePrices    = {{ sale_chart.prices | tojson }};
+const salePricesMA  = {{ sale_chart.prices_ma | tojson }};
+const salePricesYoy = {{ sale_chart.prices_yoy | tojson }};
+const saleDom       = {{ sale_chart.dom | tojson }};
+const saleDomMA     = {{ sale_chart.dom_ma | tojson }};
+const saleDomYoy    = {{ sale_chart.dom_yoy | tojson }};
+const saleListings  = {{ sale_chart.listings | tojson }};
+const saleListMA    = {{ sale_chart.listings_ma | tojson }};
+const saleListYoy   = {{ sale_chart.listings_yoy | tojson }};
+const rentLabels    = {{ rent_chart.labels | tojson }};
+const rentPrices    = {{ rent_chart.prices | tojson }};
+const rentPricesMA  = {{ rent_chart.prices_ma | tojson }};
+const rentPricesYoy = {{ rent_chart.prices_yoy | tojson }};
 
-// Tab switching
-const tabBtns  = document.querySelectorAll('.tab-btn');
-const tabPanes = document.querySelectorAll('.tab-pane');
+const BLUE  = "#3755c3", AMBER = "#d97706", GREEN = "#10b981";
+const RED   = "#ef4444", TEAL  = "#005236", GRAY  = "#94a3b8";
 
-tabBtns.forEach(btn => {
-  btn.addEventListener('click', () => {
-    const tab = btn.dataset.tab;
-    tabPanes.forEach(p => p.classList.add('hidden'));
-    tabBtns.forEach(b => {
-      b.classList.remove('border-secondary', 'text-secondary');
-      b.classList.add('border-transparent', 'text-on-surface-variant');
-    });
-    document.getElementById('tab-' + tab).classList.remove('hidden');
-    btn.classList.remove('border-transparent', 'text-on-surface-variant');
-    btn.classList.add('border-secondary', 'text-secondary');
-  });
+const BASE_OPTS = {
+  responsive: true, maintainAspectRatio: false,
+  interaction: { mode: "index", intersect: false },
+  plugins: {
+    legend: { display: false },
+    tooltip: {
+      backgroundColor: "#0b1c30",
+      titleFont: { family: "Inter", size: 12 },
+      bodyFont:  { family: "Inter", size: 12 },
+    },
+  },
+  scales: {
+    x: { ticks: { font: { family: "Inter", size: 11 }, color: "#45464d", maxTicksLimit: 12 }, grid: { display: false } },
+    y: { ticks: { font: { family: "Inter", size: 11 }, color: "#45464d" }, grid: { color: "#e5eeff" } },
+  },
+};
+
+const fmtLbl = labels => labels.map(l => {
+  const d = new Date(l + "T00:00:00");
+  return d.toLocaleDateString("en-US", { month: "short", year: "2-digit" });
 });
 
-// Charts
-function lineChart(id, labels, data, label, color) {
+function lineChart(id, labels, datasets, yFmt) {
   const ctx = document.getElementById(id);
   if (!ctx) return;
+  const opts = JSON.parse(JSON.stringify(BASE_OPTS));
+  if (yFmt) opts.scales.y.ticks.callback = yFmt;
+  new Chart(ctx, { type: "line", data: { labels: fmtLbl(labels), datasets }, options: opts });
+}
+
+function yoyBar(id, labels, data) {
+  const ctx = document.getElementById(id);
+  if (!ctx) return;
+  const opts = JSON.parse(JSON.stringify(BASE_OPTS));
+  opts.scales.y.ticks.callback = v => v + "%";
+  opts.plugins.tooltip.callbacks = { label: c => c.raw !== null ? (c.raw > 0 ? "+" : "") + c.raw + "%" : "—" };
   new Chart(ctx, {
-    type: 'line',
+    type: "bar",
     data: {
-      labels,
+      labels: fmtLbl(labels),
       datasets: [{
-        label, data,
-        borderColor: color,
-        backgroundColor: color + '18',
-        fill: true,
-        tension: 0.35,
-        borderWidth: 2,
-        pointRadius: 3,
-        pointHoverRadius: 5,
-      }]
+        data,
+        backgroundColor: data.map(v => v === null ? "transparent" : v >= 0 ? "rgba(16,185,129,0.75)" : "rgba(239,68,68,0.75)"),
+        borderRadius: 2, barPercentage: 0.75,
+      }],
     },
-    options: {
-      responsive: true,
-      plugins: { legend: { display: false } },
-      scales: {
-        x: { grid: { color: '#e5eeff' }, ticks: { font: { family: 'Inter', size: 11 }, color: '#76777d' } },
-        y: { grid: { color: '#e5eeff' }, ticks: { font: { family: 'Inter', size: 11 }, color: '#76777d' } },
-      }
-    }
+    options: opts,
   });
 }
 
-lineChart('salePriceChart', saleChart.labels, saleChart.prices, 'Median Sale Price',    '#3755c3');
-lineChart('saleDomChart',   saleChart.labels, saleChart.dom,    'Avg Days on Market',   '#d97706');
-lineChart('rentPriceChart', rentChart.labels, rentChart.prices, 'Median Rent / mo',     '#005236');
-lineChart('rentDomChart',   rentChart.labels, rentChart.dom,    'Rental Days on Market','#ba1a1a');
+function macroLine(id, obs, color) {
+  const ctx = document.getElementById(id);
+  if (!ctx || !obs) return;
+  new Chart(ctx, {
+    type: "line",
+    data: {
+      labels: obs.map(o => o.date),
+      datasets: [{ data: obs.map(o => o.value), borderColor: color, borderWidth: 2, pointRadius: 0, tension: 0.3, fill: false }],
+    },
+    options: BASE_OPTS,
+  });
+}
+
+const lineDs = (data, color, dashed) => ({
+  data, borderColor: color, borderWidth: dashed ? 1.5 : 2,
+  borderDash: dashed ? [4, 3] : [], pointRadius: 0, tension: 0.3, fill: false,
+});
+
+const priceFmt = v => v ? "$" + (v >= 1000 ? (v/1000).toFixed(0) + "k" : v) : "";
+
+lineChart("priceChart",    saleLabels,  [lineDs(salePrices, BLUE, false), lineDs(salePricesMA, AMBER, true)],  priceFmt);
+yoyBar("priceYoyChart",    saleLabels,  salePricesYoy);
+lineChart("domChart",      saleLabels,  [lineDs(saleDom, BLUE, false), lineDs(saleDomMA, AMBER, true)]);
+yoyBar("domYoyChart",      saleLabels,  saleDomYoy);
+lineChart("listingsChart", saleLabels,  [lineDs(saleListings, TEAL, false), lineDs(saleListMA, AMBER, true)]);
+yoyBar("listingsYoyChart", saleLabels,  saleListYoy);
+lineChart("rentChart",     rentLabels,  [lineDs(rentPrices, GREEN, false), lineDs(rentPricesMA, AMBER, true)], priceFmt);
+yoyBar("rentYoyChart",     rentLabels,  rentPricesYoy);
+
+{% if fred_configured and macro %}
+{% if macro.get("MORTGAGE30US") %}macroLine("mortgageChart", {{ macro.MORTGAGE30US.history | tojson }}, RED);{% endif %}
+{% if macro.get("UNRATE") %}macroLine("unemployChart", {{ macro.UNRATE.history | tojson }}, BLUE);{% endif %}
+{% if macro.get("CPIAUCSL") %}macroLine("cpiChart", {{ macro.CPIAUCSL.history | tojson }}, AMBER);{% endif %}
+{% if macro.get("DGS10") %}macroLine("treasuryChart", {{ macro.DGS10.history | tojson }}, TEAL);{% endif %}
+{% endif %}
+
+function switchTab(id) {
+  document.querySelectorAll(".tab-panel").forEach(p => p.classList.add("hidden"));
+  document.querySelectorAll(".tab-btn").forEach(b => {
+    b.classList.remove("border-secondary", "text-secondary", "font-semibold");
+    b.classList.add("border-transparent", "text-on-surface-variant");
+  });
+  document.getElementById("tab-" + id).classList.remove("hidden");
+  const btn = document.getElementById("tab-btn-" + id);
+  btn.classList.add("border-secondary", "text-secondary", "font-semibold");
+  btn.classList.remove("border-transparent", "text-on-surface-variant");
+}
 </script>
 {% endblock %}

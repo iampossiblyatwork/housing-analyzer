@@ -29,7 +29,7 @@ def get_sale_estimate(**params):
     return r.json()
 
 
-def get_market_stats(zip_code, data_type="All", history_range=12):
+def get_market_stats(zip_code, data_type="All", history_range=24):
     params = {"zipCode": zip_code, "dataType": data_type, "historyRange": history_range}
     r = requests.get(f"{BASE_URL}/markets", headers=_headers(), params=params)
     r.raise_for_status()

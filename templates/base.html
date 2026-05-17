@@ -97,8 +97,9 @@
       {% set ep = request.endpoint %}
       {% set nav = [
         ("index",           "dashboard",     "Market Analysis",     "/"),
+        ("signals",         "stacked_line_chart","Signal Chain",    "/signals"),
+        ("compare",         "compare_arrows","Multi-ZIP Compare",   "/compare"),
         ("property_lookup", "home_work",     "Property Lookup",     "/property"),
-        ("compare",         "compare_arrows","Compare Markets",     "/compare"),
         ("heatmap",         "map",           "Market Heatmap",      "/heatmap"),
         ("geofence",        "location_on",   "Geofence Search",     "/geofence"),
         ("investor",        "trending_up",   "Investor Calculator", "/investor"),
@@ -119,7 +120,7 @@
 
     <!-- Footer -->
     <div class="border-t border-outline-variant px-stack-md py-stack-md">
-      <p class="text-label-sm text-outline">Data: RentCast API</p>
+      <p class="text-label-sm text-outline">RentCast · FRED · Census ACS</p>
     </div>
   </aside>
 
@@ -165,8 +166,10 @@
     {% set ep = request.endpoint %}
     {% set nav = [
       ("index",           "dashboard",     "Market Analysis",     "/"),
+      ("signals",         "stacked_line_chart","Signal Chain",    "/signals"),
+      ("compare",         "compare_arrows","Multi-ZIP Compare",   "/compare"),
       ("property_lookup", "home_work",     "Property Lookup",     "/property"),
-      ("compare",         "compare_arrows","Compare Markets",     "/compare"),
+      ("heatmap",         "map",           "Market Heatmap",      "/heatmap"),
       ("geofence",        "location_on",   "Geofence Search",     "/geofence"),
       ("investor",        "trending_up",   "Investor Calculator", "/investor"),
       ("reference",       "menu_book",     "Metrics Reference",   "/reference"),

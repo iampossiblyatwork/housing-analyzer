@@ -2,8 +2,34 @@ from flask import Flask, render_template, request, redirect, url_for, jsonify
 import housing_api
 import alerts as alert_mgr
 import metrics
+import fred_api
+import census_api
 
 app = Flask(__name__)
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _build_history(section_data, price_key, dom_key="averageDaysOnMarket"):
+    history = section_data.get("history", {})
+    months  = sorted(history.keys())
+    return {
+        "labels":   months,
+        "prices":   [history[m].get(price_key) for m in months],
+        "dom":      [history[m].get(dom_key) for m in months],
+        "listings": [history[m].get("totalListings") for m in months],
+    }
+
+
+def _enrich_chart(chart):
+    """Attach YoY series and 12-month moving average to a history chart dict."""
+    chart["prices_yoy"] = metrics.build_yoy_series(chart["labels"], chart["prices"])
+    chart["dom_yoy"]    = metrics.build_yoy_series(chart["labels"], chart["dom"])
+    chart["listings_yoy"] = metrics.build_yoy_series(chart["labels"], chart["listings"])
+    chart["prices_ma"]  = metrics.compute_moving_average(chart["prices"])
+    chart["dom_ma"]     = metrics.compute_moving_average(chart["dom"])
+    chart["listings_ma"] = metrics.compute_moving_average(chart["listings"])
+    return chart
 
 
 # ── Home ──────────────────────────────────────────────────────────────────────
@@ -18,31 +44,22 @@ def index():
 @app.route("/market")
 def market():
     zip_code = request.args.get("zip", "").strip()
-    history_range = int(request.args.get("history", 12))
     if not zip_code:
         return redirect(url_for("index"))
 
     try:
-        data = housing_api.get_market_stats(zip_code, history_range=history_range)
+        data = housing_api.get_market_stats(zip_code, history_range=24)
     except Exception as e:
         return render_template("error.html", message=str(e))
 
-    def build_history(section_data, price_key, dom_key="averageDaysOnMarket"):
-        history = section_data.get("history", {})
-        months = sorted(history.keys())
-        return {
-            "labels":   months,
-            "prices":   [history[m].get(price_key) for m in months],
-            "dom":      [history[m].get(dom_key) for m in months],
-            "listings": [history[m].get("totalListings") for m in months],
-        }
+    sale_chart = _enrich_chart(_build_history(data.get("saleData", {}), "medianPrice"))
+    rent_chart = _enrich_chart(_build_history(data.get("rentalData", {}), "medianRent"))
 
-    sale_chart = build_history(data.get("saleData", {}), "medianPrice")
-    rent_chart = build_history(data.get("rentalData", {}), "medianRent")
-
-    triggered        = alert_mgr.check_and_notify(data, zip_code)
-    interpretations  = metrics.interpret_market(data)
-    signals          = metrics.detect_composite_signals(sale_chart)
+    triggered       = alert_mgr.check_and_notify(data, zip_code)
+    interpretations = metrics.interpret_market(data)
+    signals         = metrics.detect_composite_signals(sale_chart)
+    demographics    = census_api.get_zip_demographics(zip_code)
+    macro           = fred_api.get_macro_context()
 
     return render_template(
         "market.html",
@@ -50,10 +67,13 @@ def market():
         data=data,
         sale_chart=sale_chart,
         rent_chart=rent_chart,
-        history_range=history_range,
         triggered=triggered,
         interpretations=interpretations,
         signals=signals,
+        demographics=demographics,
+        macro=macro,
+        fred_configured=fred_api.is_configured(),
+        census_configured=census_api.is_configured(),
     )
 
 
@@ -82,7 +102,6 @@ def property_lookup():
 
     prop = props[0] if props else None
 
-    # Investor quick-screen using AVM estimates
     investor_metrics = None
     if sale_est and rent_est:
         price        = sale_est.get("price")
@@ -92,14 +111,17 @@ def property_lookup():
             grm         = metrics.compute_grm(price, annual_rent)
             ptr         = round(price / annual_rent, 1)
             investor_metrics = {
-                "grm":            grm,
-                "grm_interp":     metrics.interpret_grm(grm),
-                "grm_badge":      "success" if grm and grm < 10 else "warning" if grm and grm < 15 else "info" if grm and grm < 20 else "danger",
-                "price_to_rent":  ptr,
-                "ptr_interp":     metrics.interpret_price_to_rent(ptr),
-                "ptr_badge":      "success" if ptr < 15 else "warning" if ptr <= 20 else "info",
-                "note":           metrics.MEDIAN_PRICE_NOTE,
+                "grm":           grm,
+                "grm_interp":    metrics.interpret_grm(grm),
+                "grm_badge":     "success" if grm and grm < 10 else "warning" if grm and grm < 15 else "info" if grm and grm < 20 else "danger",
+                "price_to_rent": ptr,
+                "ptr_interp":    metrics.interpret_price_to_rent(ptr),
+                "ptr_badge":     "success" if ptr < 15 else "warning" if ptr <= 20 else "info",
+                "note":          metrics.MEDIAN_PRICE_NOTE,
             }
+
+    zip_code     = prop.get("zipCode") if prop else None
+    demographics = census_api.get_zip_demographics(zip_code) if zip_code else None
 
     return render_template(
         "property.html",
@@ -108,25 +130,67 @@ def property_lookup():
         rent_est=rent_est,
         sale_est=sale_est,
         investor_metrics=investor_metrics,
+        demographics=demographics,
+        census_configured=census_api.is_configured(),
     )
 
 
-# ── Market Comparison ─────────────────────────────────────────────────────────
+# ── Market Comparison — multi-ZIP time-series overlay ─────────────────────────
 
 @app.route("/compare")
 def compare():
-    zip1 = request.args.get("zip1", "").strip()
-    zip2 = request.args.get("zip2", "").strip()
-    if not zip1 or not zip2:
-        return render_template("compare.html", zip1=None, zip2=None, d1=None, d2=None)
+    zips = [z.strip() for z in [
+        request.args.get("zip1", ""),
+        request.args.get("zip2", ""),
+        request.args.get("zip3", ""),
+    ] if z.strip()]
+
+    if len(zips) < 2:
+        return render_template("compare.html", zips=[], datasets=[], market_data=[])
 
     try:
-        d1 = housing_api.get_market_stats(zip1)
-        d2 = housing_api.get_market_stats(zip2)
+        raw = [housing_api.get_market_stats(z, history_range=24) for z in zips]
     except Exception as e:
         return render_template("error.html", message=str(e))
 
-    return render_template("compare.html", zip1=zip1, zip2=zip2, d1=d1, d2=d2)
+    datasets = []
+    for z, d in zip(zips, raw):
+        chart = _enrich_chart(_build_history(d.get("saleData", {}), "medianPrice"))
+        datasets.append({
+            "zip":    z,
+            "chart":  chart,
+            "interp": metrics.interpret_market(d),
+            "sale":   d.get("saleData", {}),
+        })
+
+    return render_template("compare.html", zips=zips, datasets=datasets, market_data=raw)
+
+
+# ── Signal Chain Dashboard ────────────────────────────────────────────────────
+
+@app.route("/signals")
+def signals():
+    zip_code = request.args.get("zip", "").strip()
+    market_data = {}
+
+    if zip_code:
+        try:
+            market_data = housing_api.get_market_stats(zip_code, history_range=24)
+        except Exception:
+            market_data = {}
+
+    macro       = fred_api.get_macro_context()
+    chain       = metrics.assess_signal_chain(market_data, macro)
+
+    return render_template(
+        "signals.html",
+        zip_code=zip_code,
+        chain=chain,
+        macro=macro,
+        fred_configured=fred_api.is_configured(),
+        signal_chain_desc=metrics.HOUSING_SUPPLY_CHAIN,
+        demand_lead_times=metrics.DEMAND_SIGNAL_LEAD_TIMES,
+    )
 
 
 # ── Geofence Search ───────────────────────────────────────────────────────────
@@ -162,10 +226,10 @@ def investor():
 
     if request.method == "POST":
         try:
-            price         = float(request.form.get("price", 0) or 0)
-            monthly_rent  = float(request.form.get("monthly_rent", 0) or 0)
-            monthly_exp   = float(request.form.get("monthly_expenses", 0) or 0)
-            annual_debt   = float(request.form.get("annual_debt_service", 0) or 0)
+            price        = float(request.form.get("price", 0) or 0)
+            monthly_rent = float(request.form.get("monthly_rent", 0) or 0)
+            monthly_exp  = float(request.form.get("monthly_expenses", 0) or 0)
+            annual_debt  = float(request.form.get("annual_debt_service", 0) or 0)
             form = request.form
 
             if price > 0 and monthly_rent > 0:
@@ -177,29 +241,30 @@ def investor():
                 ptr         = round(price / annual_rent, 1)
 
                 result = {
-                    "price":         price,
-                    "monthly_rent":  monthly_rent,
-                    "monthly_exp":   monthly_exp,
-                    "annual_debt":   annual_debt,
-                    "annual_rent":   annual_rent,
-                    "noi":           noi,
-                    "grm":           grm,
-                    "grm_interp":    metrics.interpret_grm(grm),
-                    "grm_badge":     "success" if grm and grm < 10 else "warning" if grm and grm < 15 else "info" if grm and grm < 20 else "danger",
-                    "cap_rate":      cap,
-                    "cap_interp":    metrics.interpret_cap_rate(cap),
-                    "cap_badge":     "success" if cap and cap >= 8 else "warning" if cap and cap >= 5 else "info" if cap and cap >= 3 else "danger",
-                    "dscr":          dscr,
-                    "dscr_interp":   metrics.interpret_dscr(dscr),
-                    "dscr_badge":    "success" if dscr and dscr >= 1.25 else "warning" if dscr and dscr >= 1.0 else "danger" if dscr else "secondary",
-                    "ptr":           ptr,
-                    "ptr_interp":    metrics.interpret_price_to_rent(ptr),
-                    "ptr_badge":     "success" if ptr < 15 else "warning" if ptr <= 20 else "info",
+                    "price":        price,
+                    "monthly_rent": monthly_rent,
+                    "monthly_exp":  monthly_exp,
+                    "annual_debt":  annual_debt,
+                    "annual_rent":  annual_rent,
+                    "noi":          noi,
+                    "grm":          grm,
+                    "grm_interp":   metrics.interpret_grm(grm),
+                    "grm_badge":    "success" if grm and grm < 10 else "warning" if grm and grm < 15 else "info" if grm and grm < 20 else "danger",
+                    "cap_rate":     cap,
+                    "cap_interp":   metrics.interpret_cap_rate(cap),
+                    "cap_badge":    "success" if cap and cap >= 8 else "warning" if cap and cap >= 5 else "info" if cap and cap >= 3 else "danger",
+                    "dscr":         dscr,
+                    "dscr_interp":  metrics.interpret_dscr(dscr),
+                    "dscr_badge":   "success" if dscr and dscr >= 1.25 else "warning" if dscr and dscr >= 1.0 else "danger" if dscr else "secondary",
+                    "ptr":          ptr,
+                    "ptr_interp":   metrics.interpret_price_to_rent(ptr),
+                    "ptr_badge":    "success" if ptr < 15 else "warning" if ptr <= 20 else "info",
                 }
         except (ValueError, ZeroDivisionError):
             pass
 
-    return render_template("investor.html", result=result, form=form)
+    macro = fred_api.get_macro_context()
+    return render_template("investor.html", result=result, form=form, macro=macro)
 
 
 # ── Metrics Reference ─────────────────────────────────────────────────────────
@@ -216,6 +281,7 @@ def reference():
         scope_notes=metrics.SCOPE_NOTES,
         data_sources=metrics.DATA_SOURCES,
         analytical_patterns=metrics.ANALYTICAL_PATTERNS,
+        signal_chain=metrics.SIGNAL_CHAIN,
     )
 
 

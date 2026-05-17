@@ -1,172 +1,275 @@
 {% extends "base.html" %}
-{% block title %}Compare Markets{% endblock %}
-{% block page_title %}Compare Markets{% endblock %}
+{% block title %}Multi-ZIP Compare{% endblock %}
+{% block page_title %}Multi-ZIP Trend Comparison{% endblock %}
 
-{% block content %}
-<div class="mb-stack-lg">
-  <h2 class="text-headline-lg text-primary tracking-tight">Compare Markets</h2>
-  <p class="text-body-md text-on-surface-variant mt-1">Side-by-side analysis of two ZIP codes.</p>
-</div>
-
-<form action="/compare" method="get" class="mb-stack-lg">
-  <div class="flex gap-2 max-w-sm">
-    <input type="text" name="zip1" value="{{ zip1 or '' }}" placeholder="ZIP 1" required
-           class="flex-1 border border-outline-variant rounded-lg px-3 py-2 text-label-md bg-white focus:outline-none focus:ring-2 focus:ring-secondary/30 placeholder:text-outline">
-    <input type="text" name="zip2" value="{{ zip2 or '' }}" placeholder="ZIP 2" required
-           class="flex-1 border border-outline-variant rounded-lg px-3 py-2 text-label-md bg-white focus:outline-none focus:ring-2 focus:ring-secondary/30 placeholder:text-outline">
-    <button type="submit" class="px-4 py-2 bg-secondary text-white text-label-md font-medium rounded-lg hover:bg-secondary/90 transition-colors">
-      Compare
-    </button>
-  </div>
-</form>
-
-{% if d1 and d2 %}
-
-{% macro winner(v1, v2, higher_is_better=true) %}
-  {% if higher_is_better %}
-    {% if v1 > v2 %}<span class="text-on-tertiary-container font-semibold">${{ "{:,.0f}".format(v1) }}</span>{% else %}<span class="text-data-tabular text-on-surface">${{ "{:,.0f}".format(v1) }}</span>{% endif %}
-  {% else %}
-    {% if v1 < v2 %}<span class="text-on-tertiary-container font-semibold">{{ v1 }}</span>{% else %}<span class="text-data-tabular text-on-surface">{{ v1 }}</span>{% endif %}
-  {% endif %}
+{% macro badge(color, text) %}
+  {% set cls = {"success":"bg-emerald-50 text-emerald-700 border-emerald-200","warning":"bg-amber-50 text-amber-700 border-amber-200","danger":"bg-red-50 text-red-700 border-red-200","info":"bg-blue-50 text-blue-700 border-blue-200","secondary":"bg-slate-50 text-slate-600 border-slate-200"} %}
+  <span class="inline-flex items-center px-2 py-0.5 rounded text-label-sm border {{ cls[color] | default('bg-slate-50 text-slate-600 border-slate-200') }}">{{ text }}</span>
 {% endmacro %}
 
-<div class="grid grid-cols-1 lg:grid-cols-2 gap-gutter mb-gutter">
+{% block content %}
 
-  <!-- Sale Comparison -->
-  <div class="bg-white border border-outline-variant rounded-lg overflow-hidden">
-    <div class="px-stack-md py-3 border-b border-outline-variant bg-surface-container-low">
-      <h3 class="text-label-md font-semibold text-primary">Sale Market</h3>
+{# ── ZIP input form ──────────────────────────────────────────────────────── #}
+<div class="bg-white border border-outline-variant rounded-lg p-5 mb-stack-lg">
+  <h2 class="text-label-md font-semibold text-primary mb-3">Select Markets to Compare</h2>
+  <form method="get" class="flex flex-wrap items-end gap-3">
+    <div>
+      <label class="block text-label-sm text-on-surface-variant mb-1">ZIP 1 <span class="text-red-500">*</span></label>
+      <input name="zip1" value="{{ zips[0] if zips|length > 0 else '' }}" placeholder="e.g. 90210"
+             class="w-32 px-3 py-2 text-label-md border border-outline-variant rounded focus:outline-none focus:border-secondary" required>
     </div>
-    <table class="w-full text-left">
-      <thead class="bg-surface-container-low border-b border-outline-variant">
-        <tr>
-          <th class="px-gutter py-2 text-label-sm text-outline">METRIC</th>
-          <th class="px-gutter py-2 text-label-sm text-outline text-right">{{ zip1 }}</th>
-          <th class="px-gutter py-2 text-label-sm text-outline text-right">{{ zip2 }}</th>
-        </tr>
-      </thead>
-      <tbody class="divide-y divide-outline-variant">
-        {% set s1 = d1.saleData or {} %}
-        {% set s2 = d2.saleData or {} %}
-        {% for label, k in [
-          ("Median Price", "medianPrice"),
-          ("Avg Price", "averagePrice"),
-          ("Median $/sqft", "medianPricePerSquareFoot"),
-          ("Total Listings", "totalListings"),
-          ("New Listings", "newListings"),
-        ] %}
-        {% set v1 = s1.get(k) or 0 %}
-        {% set v2 = s2.get(k) or 0 %}
-        <tr class="hover:bg-surface-container-low transition-colors">
-          <td class="px-gutter py-2.5 text-label-md text-on-surface-variant">{{ label }}</td>
-          <td class="px-gutter py-2.5 text-data-tabular text-right {{ 'text-on-tertiary-container font-semibold' if v1 > v2 else '' }}">${{ "{:,.0f}".format(v1) }}</td>
-          <td class="px-gutter py-2.5 text-data-tabular text-right {{ 'text-on-tertiary-container font-semibold' if v2 > v1 else '' }}">${{ "{:,.0f}".format(v2) }}</td>
-        </tr>
-        {% endfor %}
-        {% set v1 = s1.get("medianDaysOnMarket") or 0 %}
-        {% set v2 = s2.get("medianDaysOnMarket") or 0 %}
-        <tr class="hover:bg-surface-container-low transition-colors">
-          <td class="px-gutter py-2.5 text-label-md text-on-surface-variant">Median DOM</td>
-          <td class="px-gutter py-2.5 text-data-tabular text-right {{ 'text-on-tertiary-container font-semibold' if v1 < v2 else '' }}">{{ v1 }} days</td>
-          <td class="px-gutter py-2.5 text-data-tabular text-right {{ 'text-on-tertiary-container font-semibold' if v2 < v1 else '' }}">{{ v2 }} days</td>
-        </tr>
-      </tbody>
-    </table>
+    <div>
+      <label class="block text-label-sm text-on-surface-variant mb-1">ZIP 2 <span class="text-red-500">*</span></label>
+      <input name="zip2" value="{{ zips[1] if zips|length > 1 else '' }}" placeholder="e.g. 10001"
+             class="w-32 px-3 py-2 text-label-md border border-outline-variant rounded focus:outline-none focus:border-secondary" required>
+    </div>
+    <div>
+      <label class="block text-label-sm text-on-surface-variant mb-1">ZIP 3 <span class="text-on-surface-variant">(optional)</span></label>
+      <input name="zip3" value="{{ zips[2] if zips|length > 2 else '' }}" placeholder="e.g. 60601"
+             class="w-32 px-3 py-2 text-label-md border border-outline-variant rounded focus:outline-none focus:border-secondary">
+    </div>
+    <button type="submit" class="px-5 py-2 bg-secondary text-white text-label-md rounded hover:bg-blue-700 transition-colors">
+      Compare
+    </button>
+  </form>
+</div>
+
+{% if datasets %}
+
+{# ── Metric selector ─────────────────────────────────────────────────────── #}
+<div class="flex items-center gap-2 mb-stack-md flex-wrap">
+  <span class="text-label-sm text-on-surface-variant">View metric:</span>
+  {% for mid, mlabel in [("price","Median Price"),("dom","Days on Market"),("listings","Active Listings"),("rent","Median Rent")] %}
+  <button onclick="setMetric('{{ mid }}')" id="mbtn-{{ mid }}"
+    class="metric-btn px-3 py-1.5 text-label-md rounded border transition-colors
+           {{ 'bg-secondary text-white border-secondary' if loop.first else 'bg-white text-on-surface-variant border-outline-variant hover:border-secondary hover:text-secondary' }}">
+    {{ mlabel }}
+  </button>
+  {% endfor %}
+</div>
+
+{# ── Time-series overlay chart ───────────────────────────────────────────── #}
+<div class="bg-white border border-outline-variant rounded-lg p-5 mb-stack-lg">
+  <div class="flex items-center justify-between mb-4">
+    <div>
+      <h3 id="chartTitle" class="text-label-md font-semibold text-primary">Median Sale Price — 24-Month Trend</h3>
+      <p class="text-label-sm text-on-surface-variant">Overlay comparison across selected ZIP codes</p>
+    </div>
+    <div class="flex items-center gap-4 text-label-sm" id="legend">
+      {% set colors = ["#3755c3", "#10b981", "#d97706"] %}
+      {% for ds in datasets %}
+      <span class="flex items-center gap-1.5">
+        <span class="inline-block w-5 h-0.5" style="background:{{ colors[loop.index0] }}"></span>
+        ZIP {{ ds.zip }}
+      </span>
+      {% endfor %}
+    </div>
   </div>
+  <div class="relative h-72">
+    <canvas id="overlayChart"></canvas>
+  </div>
+</div>
 
-  <!-- Rental Comparison -->
-  <div class="bg-white border border-outline-variant rounded-lg overflow-hidden">
-    <div class="px-stack-md py-3 border-b border-outline-variant bg-surface-container-low">
-      <h3 class="text-label-md font-semibold text-primary">Rental Market</h3>
-    </div>
-    <table class="w-full text-left">
-      <thead class="bg-surface-container-low border-b border-outline-variant">
-        <tr>
-          <th class="px-gutter py-2 text-label-sm text-outline">METRIC</th>
-          <th class="px-gutter py-2 text-label-sm text-outline text-right">{{ zip1 }}</th>
-          <th class="px-gutter py-2 text-label-sm text-outline text-right">{{ zip2 }}</th>
+{# ── YoY change overlay ──────────────────────────────────────────────────── #}
+<div class="bg-white border border-outline-variant rounded-lg p-5 mb-stack-lg">
+  <div class="mb-4">
+    <h3 id="yoyTitle" class="text-label-md font-semibold text-primary">Price — Year-over-Year Change by ZIP</h3>
+    <p class="text-label-sm text-on-surface-variant italic">DOM and inventory are highly seasonal — YoY is the correct comparison frame.</p>
+  </div>
+  <div class="relative h-56">
+    <canvas id="yoyChart"></canvas>
+  </div>
+</div>
+
+{# ── Point-in-time comparison table ─────────────────────────────────────── #}
+<div class="bg-white border border-outline-variant rounded-lg overflow-hidden mb-stack-lg">
+  <div class="px-5 py-3 border-b border-outline-variant">
+    <h3 class="text-label-md font-semibold text-primary">Current Snapshot Comparison</h3>
+  </div>
+  <div class="overflow-x-auto">
+    <table class="w-full text-data-tabular">
+      <thead>
+        <tr class="bg-surface-container-low text-label-sm text-on-surface-variant uppercase tracking-wide">
+          <th class="px-5 py-3 text-left font-semibold">Metric</th>
+          {% for ds in datasets %}
+          <th class="px-5 py-3 text-right font-semibold">ZIP {{ ds.zip }}</th>
+          {% endfor %}
         </tr>
       </thead>
       <tbody class="divide-y divide-outline-variant">
-        {% set r1 = d1.rentalData or {} %}
-        {% set r2 = d2.rentalData or {} %}
-        {% for label, k in [
-          ("Median Rent/mo", "medianRent"),
-          ("Avg Rent/mo", "averageRent"),
-          ("Median $/sqft", "medianRentPerSquareFoot"),
-          ("Total Listings", "totalListings"),
-          ("New Listings", "newListings"),
+        {% set rows = [
+          ("Median Sale Price", "medianPrice", "$"),
+          ("Avg Days on Market", "averageDaysOnMarket", ""),
+          ("Months of Supply", "monthsOfSupply", ""),
+          ("Active Listings", "totalListings", ""),
         ] %}
-        {% set v1 = r1.get(k) or 0 %}
-        {% set v2 = r2.get(k) or 0 %}
+        {% for label, key, prefix in rows %}
         <tr class="hover:bg-surface-container-low transition-colors">
-          <td class="px-gutter py-2.5 text-label-md text-on-surface-variant">{{ label }}</td>
-          <td class="px-gutter py-2.5 text-data-tabular text-right {{ 'text-on-tertiary-container font-semibold' if v1 > v2 else '' }}">${{ "{:,.0f}".format(v1) }}</td>
-          <td class="px-gutter py-2.5 text-data-tabular text-right {{ 'text-on-tertiary-container font-semibold' if v2 > v1 else '' }}">${{ "{:,.0f}".format(v2) }}</td>
+          <td class="px-5 py-3 text-on-surface-variant">{{ label }}</td>
+          {% for ds in datasets %}
+          {% set val = ds.sale.get(key) %}
+          <td class="px-5 py-3 text-right font-medium tabular-nums text-primary">
+            {% if val is not none %}
+              {% if key == "medianPrice" %}${{ "{:,.0f}".format(val) }}
+              {% elif key == "monthsOfSupply" %}{{ "{:.1f}".format(val) }} mo
+              {% elif key == "totalListings" %}{{ "{:,}".format(val | int) }}
+              {% else %}{{ "{:.0f}".format(val) }} days
+              {% endif %}
+            {% else %}—{% endif %}
+          </td>
+          {% endfor %}
         </tr>
         {% endfor %}
-        {% set v1 = r1.get("medianDaysOnMarket") or 0 %}
-        {% set v2 = r2.get("medianDaysOnMarket") or 0 %}
+
+        {# YoY rows #}
+        {% for label, key in [("Price YoY %","prices_yoy"), ("DOM YoY %","dom_yoy"), ("Listings YoY %","listings_yoy")] %}
         <tr class="hover:bg-surface-container-low transition-colors">
-          <td class="px-gutter py-2.5 text-label-md text-on-surface-variant">Median DOM</td>
-          <td class="px-gutter py-2.5 text-data-tabular text-right {{ 'text-on-tertiary-container font-semibold' if v1 < v2 else '' }}">{{ v1 }} days</td>
-          <td class="px-gutter py-2.5 text-data-tabular text-right {{ 'text-on-tertiary-container font-semibold' if v2 < v1 else '' }}">{{ v2 }} days</td>
+          <td class="px-5 py-3 text-on-surface-variant">{{ label }}</td>
+          {% for ds in datasets %}
+          {% set yoy_series = ds.chart.get(key, []) %}
+          {% set yoy = yoy_series[-1] if yoy_series else none %}
+          <td class="px-5 py-3 text-right tabular-nums font-semibold
+            {% if yoy is not none %}{% if yoy > 0 %}text-emerald-700{% elif yoy < 0 %}text-red-600{% else %}text-on-surface-variant{% endif %}{% else %}text-on-surface-variant{% endif %}">
+            {% if yoy is not none %}{{ "+" if yoy > 0 else "" }}{{ yoy }}%{% else %}—{% endif %}
+          </td>
+          {% endfor %}
         </tr>
+        {% endfor %}
       </tbody>
     </table>
   </div>
 </div>
 
-<!-- Bar chart -->
-<div class="bg-white border border-outline-variant rounded-lg p-stack-md">
-  <p class="text-label-sm text-on-surface-variant uppercase tracking-wider mb-3">Price &amp; Rent Comparison</p>
-  <canvas id="compareChart" style="max-height:220px"></canvas>
+{# ── Per-ZIP metric card strip ───────────────────────────────────────────── #}
+<div class="grid grid-cols-1 {% if datasets|length == 2 %}lg:grid-cols-2{% else %}lg:grid-cols-3{% endif %} gap-stack-md">
+  {% set colors_hex = ["#3755c3", "#10b981", "#d97706"] %}
+  {% for ds in datasets %}
+  <div class="bg-white border border-outline-variant rounded-lg overflow-hidden">
+    <div class="px-5 py-3 border-b-4" style="border-color:{{ colors_hex[loop.index0] }}">
+      <h3 class="text-label-md font-semibold text-primary">ZIP {{ ds.zip }}</h3>
+    </div>
+    <div class="divide-y divide-outline-variant">
+      {% for key, interp in ds.interp.items() %}
+      <div class="px-5 py-3 flex items-center justify-between">
+        <div class="text-label-sm text-on-surface-variant">{{ interp.label }}</div>
+        <div class="flex items-center gap-2">
+          <span class="text-label-sm font-medium tabular-nums text-primary">{{ interp.value }}</span>
+          {{ badge(interp.badge, interp.interpretation | truncate(25, true, "…")) }}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endfor %}
 </div>
 
+{% else %}
+<div class="bg-white border border-outline-variant rounded-lg p-12 text-center text-on-surface-variant">
+  <span class="material-symbols-outlined text-outline" style="font-size:48px">compare_arrows</span>
+  <p class="mt-4 text-body-md">Enter two or three ZIP codes above to overlay their 24-month market trends.</p>
+</div>
 {% endif %}
+
 {% endblock %}
 
 {% block scripts %}
-{% if d1 and d2 %}
+{% if datasets %}
 <script>
-new Chart(document.getElementById('compareChart'), {
-  type: 'bar',
-  data: {
-    labels: ['Median Sale Price', 'Avg Sale Price', 'Median Rent/mo', 'Avg Rent/mo'],
-    datasets: [
-      {
-        label: '{{ zip1 }}',
-        backgroundColor: '#3755c3cc',
-        borderRadius: 4,
-        data: [
-          {{ d1.saleData.medianPrice or 0 }},
-          {{ d1.saleData.averagePrice or 0 }},
-          {{ d1.rentalData.medianRent or 0 }},
-          {{ d1.rentalData.averageRent or 0 }},
-        ]
-      },
-      {
-        label: '{{ zip2 }}',
-        backgroundColor: '#4edea3cc',
-        borderRadius: 4,
-        data: [
-          {{ d2.saleData.medianPrice or 0 }},
-          {{ d2.saleData.averagePrice or 0 }},
-          {{ d2.rentalData.medianRent or 0 }},
-          {{ d2.rentalData.averageRent or 0 }},
-        ]
-      }
-    ]
-  },
-  options: {
-    responsive: true,
-    plugins: { legend: { display: true, labels: { font: { family: 'Inter', size: 12 }, color: '#45464d' } } },
-    scales: {
-      x: { grid: { color: '#e5eeff' }, ticks: { font: { family: 'Inter', size: 11 }, color: '#76777d' } },
-      y: { grid: { color: '#e5eeff' }, ticks: { font: { family: 'Inter', size: 11 }, color: '#76777d' } },
-    }
-  }
+const COLORS = ["#3755c3", "#10b981", "#d97706"];
+const AMBER  = "#d97706";
+
+const datasets = {{ datasets | map(attribute='chart') | list | tojson }};
+const zips     = {{ zips | tojson }};
+
+// Each dataset has: labels, prices, prices_yoy, prices_ma, dom, dom_yoy, dom_ma, listings, listings_yoy
+
+const METRICS = {
+  price:    { title: "Median Sale Price — 24-Month Trend",   yoyTitle: "Price — Year-over-Year Change by ZIP",    key: "prices",   yoyKey: "prices_yoy",   fmt: v => "$" + (v >= 1000 ? (v/1000).toFixed(0)+"k" : v) },
+  dom:      { title: "Days on Market — 24-Month Trend",      yoyTitle: "DOM — Year-over-Year Change by ZIP",       key: "dom",      yoyKey: "dom_yoy",      fmt: v => v + " days" },
+  listings: { title: "Active Listings — 24-Month Trend",     yoyTitle: "Listings — Year-over-Year Change by ZIP",  key: "listings", yoyKey: "listings_yoy", fmt: null },
+  rent:     { title: "Median Rent — 24-Month Trend",         yoyTitle: "Rent — Year-over-Year Change by ZIP",      key: "prices",   yoyKey: "prices_yoy",   fmt: v => "$" + v + "/mo" },
+};
+
+const fmtLbl = labels => labels.map(l => {
+  const d = new Date(l + "T00:00:00");
+  return d.toLocaleDateString("en-US", { month: "short", year: "2-digit" });
 });
+
+const BASE = {
+  responsive: true, maintainAspectRatio: false,
+  interaction: { mode: "index", intersect: false },
+  plugins: {
+    legend: { display: false },
+    tooltip: { backgroundColor: "#0b1c30", titleFont: { family: "Inter", size: 12 }, bodyFont: { family: "Inter", size: 12 } },
+  },
+  scales: {
+    x: { ticks: { font: { family: "Inter", size: 11 }, color: "#45464d", maxTicksLimit: 12 }, grid: { display: false } },
+    y: { ticks: { font: { family: "Inter", size: 11 }, color: "#45464d" }, grid: { color: "#e5eeff" } },
+  },
+};
+
+let overlayChart, yoyChart;
+
+function buildCharts(metricId) {
+  const m = METRICS[metricId];
+  // Use longest labels array
+  const labels = datasets.reduce((best, d) => (d.labels.length > best.length ? d.labels : best), []);
+
+  const lineDs = datasets.map((d, i) => ({
+    label: `ZIP ${zips[i]}`,
+    data: d[m.key],
+    borderColor: COLORS[i],
+    borderWidth: 2,
+    pointRadius: 0,
+    tension: 0.3,
+    fill: false,
+  }));
+
+  const opts = JSON.parse(JSON.stringify(BASE));
+  if (m.fmt) opts.scales.y.ticks.callback = m.fmt;
+
+  if (overlayChart) overlayChart.destroy();
+  overlayChart = new Chart(document.getElementById("overlayChart"), {
+    type: "line",
+    data: { labels: fmtLbl(labels), datasets: lineDs },
+    options: opts,
+  });
+
+  // YoY grouped bar
+  const yoyDs = datasets.map((d, i) => ({
+    label: `ZIP ${zips[i]}`,
+    data: d[m.yoyKey],
+    backgroundColor: COLORS[i] + "cc",
+    borderRadius: 2,
+    barPercentage: 0.6,
+  }));
+
+  const yoyOpts = JSON.parse(JSON.stringify(BASE));
+  yoyOpts.scales.y.ticks.callback = v => v + "%";
+
+  if (yoyChart) yoyChart.destroy();
+  yoyChart = new Chart(document.getElementById("yoyChart"), {
+    type: "bar",
+    data: { labels: fmtLbl(labels), datasets: yoyDs },
+    options: { ...yoyOpts, plugins: { ...yoyOpts.plugins, legend: { display: datasets.length > 1, position: "top", labels: { font: { family: "Inter", size: 11 }, boxWidth: 12 } } } },
+  });
+
+  document.getElementById("chartTitle").textContent = m.title;
+  document.getElementById("yoyTitle").textContent = m.yoyTitle;
+}
+
+function setMetric(id) {
+  document.querySelectorAll(".metric-btn").forEach(b => {
+    b.classList.remove("bg-secondary", "text-white", "border-secondary");
+    b.classList.add("bg-white", "text-on-surface-variant", "border-outline-variant");
+  });
+  const btn = document.getElementById("mbtn-" + id);
+  btn.classList.add("bg-secondary", "text-white", "border-secondary");
+  btn.classList.remove("bg-white", "text-on-surface-variant", "border-outline-variant");
+  buildCharts(id);
+}
+
+buildCharts("price");
 </script>
 {% endif %}
 {% endblock %}
