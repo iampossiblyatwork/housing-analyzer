@@ -1,0 +1,6 @@
+body { background-color: #f8f9fa; }
+.navbar-brand { letter-spacing: 1px; }
+.card { border-radius: 10px; }
+.card-header { border-radius: 10px 10px 0 0 !important; background: #f1f3f5; font-size: .95rem; }
+canvas { max-height: 300px; }
+#map { z-index: 0; }

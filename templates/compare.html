@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block title %}Compare Markets{% endblock %}
+{% block content %}
+
+<h2 class="fw-bold mb-4"><i class="bi bi-bar-chart-line text-warning me-2"></i>Compare Markets</h2>
+
+<form action="/compare" method="get" class="mb-4">
+  <div class="row g-2" style="max-width:500px">
+    <div class="col"><input type="text" class="form-control" name="zip1" value="{{ zip1 or '' }}" placeholder="Zip 1" required></div>
+    <div class="col"><input type="text" class="form-control" name="zip2" value="{{ zip2 or '' }}" placeholder="Zip 2" required></div>
+    <div class="col-auto"><button class="btn btn-warning" type="submit">Compare</button></div>
+  </div>
+</form>
+
+{% if d1 and d2 %}
+
+{% macro stat_row(label, v1, v2, fmt="$") %}
+{% set n1 = v1 or 0 %}
+{% set n2 = v2 or 0 %}
+<tr>
+  <td class="text-muted small">{{ label }}</td>
+  <td class="fw-bold {% if n1 > n2 %}text-success{% elif n1 < n2 %}text-danger{% endif %}">
+    {% if fmt == "$" %}${{ "{:,.0f}".format(n1) }}{% else %}{{ n1 }}{% endif %}
+  </td>
+  <td class="fw-bold {% if n2 > n1 %}text-success{% elif n2 < n1 %}text-danger{% endif %}">
+    {% if fmt == "$" %}${{ "{:,.0f}".format(n2) }}{% else %}{{ n2 }}{% endif %}
+  </td>
+</tr>
+{% endmacro %}
+
+<div class="row g-4">
+  <!-- Sale Comparison -->
+  <div class="col-lg-6">
+    <div class="card shadow-sm">
+      <div class="card-header fw-bold"><i class="bi bi-house me-2"></i>Sale Market</div>
+      <div class="card-body p-0">
+        <table class="table table-hover mb-0">
+          <thead><tr><th>Metric</th><th>{{ zip1 }}</th><th>{{ zip2 }}</th></tr></thead>
+          <tbody>
+            {{ stat_row("Median Price",       d1.saleData.medianPrice,       d2.saleData.medianPrice) }}
+            {{ stat_row("Avg Price",          d1.saleData.averagePrice,      d2.saleData.averagePrice) }}
+            {{ stat_row("Median $/sqft",      d1.saleData.medianPricePerSquareFoot, d2.saleData.medianPricePerSquareFoot) }}
+            {{ stat_row("Median DOM",         d1.saleData.medianDaysOnMarket, d2.saleData.medianDaysOnMarket, fmt="n") }}
+            {{ stat_row("Total Listings",     d1.saleData.totalListings,     d2.saleData.totalListings,     fmt="n") }}
+            {{ stat_row("New Listings",       d1.saleData.newListings,       d2.saleData.newListings,       fmt="n") }}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Rental Comparison -->
+  <div class="col-lg-6">
+    <div class="card shadow-sm">
+      <div class="card-header fw-bold"><i class="bi bi-key me-2"></i>Rental Market</div>
+      <div class="card-body p-0">
+        <table class="table table-hover mb-0">
+          <thead><tr><th>Metric</th><th>{{ zip1 }}</th><th>{{ zip2 }}</th></tr></thead>
+          <tbody>
+            {{ stat_row("Median Rent/mo",     d1.rentalData.medianRent,      d2.rentalData.medianRent) }}
+            {{ stat_row("Avg Rent/mo",        d1.rentalData.averageRent,     d2.rentalData.averageRent) }}
+            {{ stat_row("Median $/sqft",      d1.rentalData.medianRentPerSquareFoot, d2.rentalData.medianRentPerSquareFoot) }}
+            {{ stat_row("Median DOM",         d1.rentalData.medianDaysOnMarket, d2.rentalData.medianDaysOnMarket, fmt="n") }}
+            {{ stat_row("Total Listings",     d1.rentalData.totalListings,   d2.rentalData.totalListings,   fmt="n") }}
+            {{ stat_row("New Listings",       d1.rentalData.newListings,     d2.rentalData.newListings,     fmt="n") }}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bar Chart -->
+  <div class="col-12">
+    <div class="card shadow-sm">
+      <div class="card-body"><canvas id="compareChart" height="80"></canvas></div>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if d1 and d2 %}
+<script>
+new Chart(document.getElementById('compareChart'), {
+  type: 'bar',
+  data: {
+    labels: ['Median Sale Price', 'Avg Sale Price', 'Median Rent/mo', 'Avg Rent/mo'],
+    datasets: [
+      {
+        label: '{{ zip1 }}',
+        backgroundColor: '#0d6efd88',
+        data: [
+          {{ d1.saleData.medianPrice or 0 }},
+          {{ d1.saleData.averagePrice or 0 }},
+          {{ d1.rentalData.medianRent or 0 }},
+          {{ d1.rentalData.averageRent or 0 }},
+        ]
+      },
+      {
+        label: '{{ zip2 }}',
+        backgroundColor: '#ffc10788',
+        data: [
+          {{ d2.saleData.medianPrice or 0 }},
+          {{ d2.saleData.averagePrice or 0 }},
+          {{ d2.rentalData.medianRent or 0 }},
+          {{ d2.rentalData.averageRent or 0 }},
+        ]
+      }
+    ]
+  },
+  options: { responsive: true, plugins: { legend: { display: true } } }
+});
+</script>
+{% endif %}
+{% endblock %}

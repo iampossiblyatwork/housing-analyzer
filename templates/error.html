@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}Error{% endblock %}
+{% block content %}
+<div class="alert alert-danger mt-4">
+  <h5 class="alert-heading"><i class="bi bi-exclamation-triangle me-2"></i>Something went wrong</h5>
+  <p class="mb-0">{{ message }}</p>
+</div>
+<a href="/" class="btn btn-outline-secondary mt-2">Back to Home</a>
+{% endblock %}

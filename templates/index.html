@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}RentCast Market Analyzer{% endblock %}
+{% block content %}
+
+<div class="row justify-content-center mb-5">
+  <div class="col-lg-8 text-center">
+    <h1 class="display-5 fw-bold mb-2">Real Estate Market Analyzer</h1>
+    <p class="text-muted">Powered by RentCast — search markets, look up properties, compare areas, and set smart alerts.</p>
+  </div>
+</div>
+
+<div class="row g-4 justify-content-center">
+
+  <!-- Market Analysis -->
+  <div class="col-md-6 col-lg-5">
+    <div class="card h-100 shadow-sm">
+      <div class="card-body">
+        <h5 class="card-title"><i class="bi bi-graph-up-arrow text-primary me-2"></i>Market Analysis</h5>
+        <p class="card-text text-muted small">Rental &amp; sale trends, pricing, days on market, and breakdown by property type for any zip code.</p>
+        <form action="/market" method="get">
+          <div class="input-group">
+            <input type="text" class="form-control" name="zip" placeholder="Zip code (e.g. 78244)" required>
+            <button class="btn btn-primary" type="submit">Analyze</button>
+          </div>
+          <div class="mt-2">
+            <label class="form-label small text-muted">History range</label>
+            <select name="history" class="form-select form-select-sm">
+              <option value="6">6 months</option>
+              <option value="12" selected>12 months</option>
+              <option value="24">24 months</option>
+            </select>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Property Lookup -->
+  <div class="col-md-6 col-lg-5">
+    <div class="card h-100 shadow-sm">
+      <div class="card-body">
+        <h5 class="card-title"><i class="bi bi-house-check text-success me-2"></i>Property Lookup</h5>
+        <p class="card-text text-muted small">Get rent and sale value estimates plus property details for a specific address.</p>
+        <form action="/property" method="get">
+          <div class="input-group">
+            <input type="text" class="form-control" name="address" placeholder="123 Main St, City, TX 78244" required>
+            <button class="btn btn-success" type="submit">Look Up</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Compare -->
+  <div class="col-md-6 col-lg-5">
+    <div class="card h-100 shadow-sm">
+      <div class="card-body">
+        <h5 class="card-title"><i class="bi bi-bar-chart-line text-warning me-2"></i>Compare Markets</h5>
+        <p class="card-text text-muted small">Side-by-side comparison of two zip codes across all key metrics.</p>
+        <form action="/compare" method="get">
+          <div class="row g-2">
+            <div class="col"><input type="text" class="form-control" name="zip1" placeholder="Zip 1" required></div>
+            <div class="col"><input type="text" class="form-control" name="zip2" placeholder="Zip 2" required></div>
+          </div>
+          <button class="btn btn-warning mt-2 w-100" type="submit">Compare</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Geofence -->
+  <div class="col-md-6 col-lg-5">
+    <div class="card h-100 shadow-sm">
+      <div class="card-body">
+        <h5 class="card-title"><i class="bi bi-geo-alt text-danger me-2"></i>Geofence Search</h5>
+        <p class="card-text text-muted small">Drop a pin on a map, set a radius, and find all properties within that area.</p>
+        <a href="/geofence" class="btn btn-danger w-100">Open Map Search</a>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

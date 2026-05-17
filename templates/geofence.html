@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+{% block title %}Geofence Search{% endblock %}
+{% block content %}
+
+<h2 class="fw-bold mb-2"><i class="bi bi-geo-alt text-danger me-2"></i>Geofence Search</h2>
+<p class="text-muted mb-4">Click the map to drop a pin, adjust the radius, then search. Properties are shown as a heat map and table, grouped by county.</p>
+
+<div class="row g-4">
+
+  <!-- Map -->
+  <div class="col-lg-8">
+    <div id="map" style="height:450px;border-radius:8px;"></div>
+  </div>
+
+  <!-- Controls -->
+  <div class="col-lg-4">
+    <form action="/geofence" method="get" id="geoForm">
+      <div class="mb-3">
+        <label class="form-label fw-bold">Center (click map or enter manually)</label>
+        <input type="number" step="any" class="form-control mb-1" name="lat" id="latInput"
+               value="{{ params.lat or '' }}" placeholder="Latitude" required>
+        <input type="number" step="any" class="form-control" name="lng" id="lngInput"
+               value="{{ params.lng or '' }}" placeholder="Longitude" required>
+      </div>
+      <div class="mb-3">
+        <label class="form-label fw-bold">Radius (miles): <span id="radiusLabel">{{ params.radius or 5 }}</span></label>
+        <input type="range" class="form-range" name="radius" id="radiusSlider"
+               min="1" max="50" value="{{ params.radius or 5 }}"
+               oninput="document.getElementById('radiusLabel').textContent=this.value; updateCircle();">
+      </div>
+      <div class="mb-3">
+        <label class="form-label fw-bold">Property Type</label>
+        <select class="form-select" name="propertyType">
+          <option value="">All Types</option>
+          <option value="Single Family" {% if params.propertyType=='Single Family' %}selected{% endif %}>Single Family</option>
+          <option value="Condo"         {% if params.propertyType=='Condo' %}selected{% endif %}>Condo</option>
+          <option value="Townhouse"     {% if params.propertyType=='Townhouse' %}selected{% endif %}>Townhouse</option>
+          <option value="Multi-Family"  {% if params.propertyType=='Multi-Family' %}selected{% endif %}>Multi-Family</option>
+          <option value="Apartment"     {% if params.propertyType=='Apartment' %}selected{% endif %}>Apartment</option>
+        </select>
+      </div>
+      <button class="btn btn-danger w-100" type="submit">Search Area</button>
+    </form>
+  </div>
+</div>
+
+{% if results %}
+<div class="mt-4">
+  <h5 class="fw-bold">{{ results | length }} properties found</h5>
+
+  <!-- County Summary -->
+  {% set county_map = {} %}
+  {% for p in results %}
+    {% set county = p.get('county', 'Unknown') %}
+    {% if county not in county_map %}{% set _ = county_map.update({county: []}) %}{% endif %}
+    {% set _ = county_map[county].append(p) %}
+  {% endfor %}
+
+  <div class="mb-3">
+    <strong>By County:</strong>
+    {% for county, props in county_map.items() %}
+    <span class="badge bg-secondary me-1">{{ county }}: {{ props|length }}</span>
+    {% endfor %}
+  </div>
+
+  <div class="table-responsive">
+    <table class="table table-hover table-sm">
+      <thead class="table-dark">
+        <tr>
+          <th>Address</th>
+          <th>County</th>
+          <th>Type</th>
+          <th>Beds/Baths</th>
+          <th>Sq Ft</th>
+          <th>Last Sale Price</th>
+          <th>Year Built</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in results %}
+        <tr>
+          <td>{{ p.get('formattedAddress', '—') }}</td>
+          <td>{{ p.get('county', '—') }}</td>
+          <td>{{ p.get('propertyType', '—') }}</td>
+          <td>{{ p.get('bedrooms', '—') }} / {{ p.get('bathrooms', '—') }}</td>
+          <td>{{ "{:,}".format(p.get('squareFootage')) if p.get('squareFootage') else '—' }}</td>
+          <td>{{ "${:,.0f}".format(p.get('lastSalePrice')) if p.get('lastSalePrice') else '—' }}</td>
+          <td>{{ p.get('yearBuilt', '—') }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+<script>
+const map = L.map('map').setView(
+  [{{ params.lat or 29.5 }}, {{ params.lng or -98.5 }}], {{ 11 if params.lat else 10 }}
+);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '© OpenStreetMap contributors'
+}).addTo(map);
+
+let marker = null;
+let circle = null;
+
+{% if params.lat and params.lng %}
+marker = L.marker([{{ params.lat }}, {{ params.lng }}]).addTo(map);
+circle = L.circle([{{ params.lat }}, {{ params.lng }}], {
+  radius: {{ (params.radius | float) * 1609.34 }},
+  color: '#dc3545', fillColor: '#dc354522', fillOpacity: 0.3
+}).addTo(map);
+{% endif %}
+
+map.on('click', function(e) {
+  document.getElementById('latInput').value = e.latlng.lat.toFixed(6);
+  document.getElementById('lngInput').value = e.latlng.lng.toFixed(6);
+  if (marker) map.removeLayer(marker);
+  marker = L.marker(e.latlng).addTo(map);
+  updateCircle();
+});
+
+function updateCircle() {
+  const lat = parseFloat(document.getElementById('latInput').value);
+  const lng = parseFloat(document.getElementById('lngInput').value);
+  const r   = parseFloat(document.getElementById('radiusSlider').value) * 1609.34;
+  if (isNaN(lat) || isNaN(lng)) return;
+  if (circle) map.removeLayer(circle);
+  circle = L.circle([lat, lng], {
+    radius: r, color: '#dc3545', fillColor: '#dc354522', fillOpacity: 0.3
+  }).addTo(map);
+}
+
+{% if results %}
+// Heat map layer
+const heatPoints = [
+  {% for p in results %}
+  {% if p.get('latitude') and p.get('longitude') %}
+  [{{ p.latitude }}, {{ p.longitude }}, {{ (p.get('lastSalePrice') or 200000) / 500000 }}],
+  {% endif %}
+  {% endfor %}
+];
+if (heatPoints.length > 0) {
+  L.heatLayer(heatPoints, { radius: 25, blur: 20, maxZoom: 17 }).addTo(map);
+}
+{% endif %}
+</script>
+{% endblock %}
