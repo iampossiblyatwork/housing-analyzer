@@ -68,7 +68,7 @@
           {% if node.id == "prices" %}${{ "{:,.0f}".format(node.value) }}
           {% elif node.id in ["inventory"] %}{{ "{:.1f}".format(node.value) }} mo
           {% elif node.id == "dom" %}{{ "{:.0f}".format(node.value) }} days
-          {% elif node.type == "leading" and node.fred_series == "NAHBMMI" %}{{ "{:.0f}".format(node.value) }}
+          {% elif node.id == "nahb" %}{{ "{:.0f}".format(node.value) }}
           {% else %}{{ "{:,.0f}".format(node.value) }}
           {% endif %}
         </div>
@@ -215,7 +215,7 @@
       ("DGS10",        "10-Year Treasury Yield",     "The spread vs. mortgage rate widens in credit stress periods."),
       ("UNRATE",       "Unemployment Rate",          "Employment is the prerequisite for housing demand."),
       ("CPIAUCSL",     "CPI (Seasonally Adj.)",       "Context for rent growth and affordability trends."),
-      ("NAHBMMI",      "NAHB Builder Confidence",    "Earliest signal in the chain — leads permits by 1–3 months. Above 50 = positive."),
+      ("BPPRIV",       "Private Building Permits",   "Forward supply pipeline. Leads starts; trust permits for direction."),
       ("PERMIT",       "Building Permits",            "Forward supply pipeline; leads starts. Divergence from starts = trend change ahead."),
       ("HOUST",        "Housing Starts",              "Compare to permits for direction. Leads completions."),
     ] %}

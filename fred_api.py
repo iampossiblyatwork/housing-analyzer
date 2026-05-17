@@ -19,7 +19,7 @@ SERIES = {
     "DGS10":        ("10-Year Treasury Yield",        "%"),
     "CPIAUCSL":     ("CPI (Seasonally Adj.)",         "Index"),
     "UNRATE":       ("Unemployment Rate",             "%"),
-    "NAHBMMI":      ("NAHB Builder Confidence",       "Index"),
+    "BPPRIV":       ("Building Permits (Private)",    "k units"),
     "PERMIT":       ("Building Permits (Thous.)",     "k units"),
     "HOUST":        ("Housing Starts (Thous.)",       "k units"),
 }
