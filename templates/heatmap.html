@@ -115,6 +115,12 @@
     <div id="errorToast" class="absolute top-4 right-4 z-[600] bg-error-container border border-error/30 rounded-lg px-4 py-3 text-label-sm text-on-error-container hidden max-w-xs shadow-card">
       <span id="errorMsg"></span>
     </div>
+
+    <!-- View-mismatch badge -->
+    <div id="viewBadge" class="absolute top-4 left-1/2 -translate-x-1/2 z-[600] hidden bg-white/95 backdrop-blur-sm border border-outline-variant rounded-full px-3 py-1.5 shadow-card flex items-center gap-1.5">
+      <span class="material-symbols-outlined text-secondary" style="font-size:16px">refresh</span>
+      <span class="text-label-sm text-on-surface">View changed — click <b>Load heatmap for view</b> to refresh</span>
+    </div>
   </div>
 </div>
 {% endblock %}
@@ -280,6 +286,7 @@ async function fetchAndRender() {
 
     renderHeat();
     renderMarkers();
+    updateViewBadge();
   } catch (e) {
     if (e.name === 'AbortError') return;  // superseded by a newer request
     clearLayers();
@@ -301,6 +308,11 @@ map.on('moveend', () => {
   // Debounce so a continuous pan/zoom only fires once after the user stops.
   moveTimer = setTimeout(fetchAndRender, 500);
 });
+
+// Separate, non-debounced moveend handler that drives the #viewBadge
+// visibility — we want immediate feedback on every pan, independent of the
+// autoLoad gate.
+map.on('moveend', updateViewBadge);
 
 function onMetricChange() {
   if (allData.length === 0) return;
@@ -427,6 +439,7 @@ function clearLayers() {
   dataHull = null;
   hullBbox = null;
   document.getElementById('legend').classList.add('hidden');
+  updateViewBadge();
 }
 
 // ── Legend ────────────────────────────────────────────────────────────────────
@@ -447,6 +460,26 @@ function showLoading(on) {
 }
 
 function hideEmpty() { document.getElementById('emptyState').classList.add('hidden'); }
+
+// ── View-mismatch badge ───────────────────────────────────────────────────────
+// Shows a top-center pill when the user pans the map far enough that the
+// loaded data hull no longer intersects the visible viewport — a hint that
+// the displayed heat field is now stale relative to what they're looking at.
+function viewportPolygon() {
+  const b = map.getBounds();
+  const w = b.getWest(), s = b.getSouth(), e = b.getEast(), n = b.getNorth();
+  return turf.polygon([[[w, s], [e, s], [e, n], [w, n], [w, s]]]);
+}
+
+function updateViewBadge() {
+  const badge = document.getElementById('viewBadge');
+  if (heatData.length === 0 || !dataHull) {
+    badge.classList.add('hidden');
+    return;
+  }
+  const intersects = turf.booleanIntersects(viewportPolygon(), dataHull);
+  badge.classList.toggle('hidden', intersects);
+}
 
 function showError(msg) {
   const t = document.getElementById('errorToast');
