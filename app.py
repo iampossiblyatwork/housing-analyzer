@@ -1,5 +1,5 @@
 from flask import Flask, render_template, request, redirect, url_for, jsonify
-import rentcast
+import housing_api
 import alerts as alert_mgr
 
 app = Flask(__name__)
@@ -22,7 +22,7 @@ def market():
         return redirect(url_for("index"))
 
     try:
-        data = rentcast.get_market_stats(zip_code, history_range=history_range)
+        data = housing_api.get_market_stats(zip_code, history_range=history_range)
     except Exception as e:
         return render_template("error.html", message=str(e))
 
@@ -62,15 +62,15 @@ def property_lookup():
         return render_template("property.html", address=None, data=None)
 
     try:
-        props   = rentcast.get_properties(address=address, limit=1)
+        props   = housing_api.get_properties(address=address, limit=1)
         rent_est = None
         sale_est = None
         try:
-            rent_est = rentcast.get_rent_estimate(address=address)
+            rent_est = housing_api.get_rent_estimate(address=address)
         except Exception:
             pass
         try:
-            sale_est = rentcast.get_sale_estimate(address=address)
+            sale_est = housing_api.get_sale_estimate(address=address)
         except Exception:
             pass
     except Exception as e:
@@ -96,8 +96,8 @@ def compare():
         return render_template("compare.html", zip1=None, zip2=None, d1=None, d2=None)
 
     try:
-        d1 = rentcast.get_market_stats(zip1)
-        d2 = rentcast.get_market_stats(zip2)
+        d1 = housing_api.get_market_stats(zip1)
+        d2 = housing_api.get_market_stats(zip2)
     except Exception as e:
         return render_template("error.html", message=str(e))
 
@@ -120,7 +120,7 @@ def geofence():
         kwargs = {}
         if prop_type:
             kwargs["propertyType"] = prop_type
-        results = rentcast.search_by_geofence(float(lat), float(lng), float(radius), **kwargs)
+        results = housing_api.search_by_geofence(float(lat), float(lng), float(radius), **kwargs)
     except Exception as e:
         return render_template("error.html", message=str(e))
 

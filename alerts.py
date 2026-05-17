@@ -73,7 +73,7 @@ def evaluate_alert(alert, market_data):
 
 
 def check_and_notify(market_data, zip_code):
-    import rentcast as rc
+    import housing_api as rc
     alerts = load_alerts()
     triggered = []
 
@@ -83,7 +83,7 @@ def check_and_notify(market_data, zip_code):
         fired, current_value = evaluate_alert(alert, market_data)
         if fired:
             msg = (
-                f"RentCast Alert [{zip_code}]: {alert['label']}\n"
+                f"Housing Analyzer Alert [{zip_code}]: {alert['label']}\n"
                 f"{alert['field']} is {current_value:,.0f} "
                 f"({alert['operator']} {float(alert['threshold']):,.0f})"
             )
