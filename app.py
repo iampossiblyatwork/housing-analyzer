@@ -219,6 +219,55 @@ def reference():
     )
 
 
+# ── Market Heatmap ───────────────────────────────────────────────────────────
+
+@app.route("/heatmap")
+def heatmap():
+    return render_template("heatmap.html")
+
+
+@app.route("/api/heatmap-data")
+def heatmap_data():
+    lat       = request.args.get("lat", type=float)
+    lng       = request.args.get("lng", type=float)
+    radius    = request.args.get("radius", 5, type=float)
+    prop_type = request.args.get("propertyType", "")
+
+    if lat is None or lng is None:
+        return jsonify({"error": "lat and lng are required"}), 400
+
+    try:
+        kwargs = {}
+        if prop_type:
+            kwargs["propertyType"] = prop_type
+        results = housing_api.search_by_geofence(lat, lng, radius, **kwargs)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+    features = []
+    for p in results:
+        lat_p = p.get("latitude")
+        lng_p = p.get("longitude")
+        if not lat_p or not lng_p:
+            continue
+        price = p.get("lastSalePrice")
+        sqft  = p.get("squareFootage")
+        dom   = p.get("daysOnMarket")
+        features.append({
+            "lat":            lat_p,
+            "lng":            lng_p,
+            "price":          price,
+            "price_per_sqft": round(price / sqft, 2) if price and sqft and sqft > 0 else None,
+            "dom":            dom,
+            "address":        p.get("formattedAddress", ""),
+            "propertyType":   p.get("propertyType", ""),
+            "bedrooms":       p.get("bedrooms"),
+            "sqft":           sqft,
+        })
+
+    return jsonify(features)
+
+
 # ── Alerts ────────────────────────────────────────────────────────────────────
 
 @app.route("/alerts", methods=["GET", "POST"])

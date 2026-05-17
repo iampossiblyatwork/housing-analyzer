@@ -1,0 +1,475 @@
+{% extends "base.html" %}
+{% block title %}Market Heatmap{% endblock %}
+{% block page_title %}Market Heatmap{% endblock %}
+
+{% block content %}
+<div class="flex gap-gutter h-[calc(100vh-8rem)]">
+
+  <!-- ── Controls sidebar ──────────────────────────────────────────────────── -->
+  <div class="w-72 shrink-0 flex flex-col gap-4 overflow-y-auto scroll-hide">
+
+    <!-- Search area -->
+    <div class="bg-white border border-outline-variant rounded-lg overflow-hidden">
+      <div class="px-stack-md py-3 border-b border-outline-variant bg-surface-container-low">
+        <h3 class="text-label-md font-semibold text-primary">Search Area</h3>
+        <p class="text-label-sm text-on-surface-variant mt-0.5">Click the map to drop a pin</p>
+      </div>
+      <div class="p-stack-md space-y-3">
+        <div>
+          <label class="block text-label-sm text-on-surface-variant mb-1">Latitude</label>
+          <input id="latInput" type="number" step="any" placeholder="e.g. 29.4241"
+                 class="w-full border border-outline-variant rounded-lg px-3 py-2 text-label-md bg-white focus:outline-none focus:ring-2 focus:ring-secondary/30 placeholder:text-outline">
+        </div>
+        <div>
+          <label class="block text-label-sm text-on-surface-variant mb-1">Longitude</label>
+          <input id="lngInput" type="number" step="any" placeholder="e.g. -98.4936"
+                 class="w-full border border-outline-variant rounded-lg px-3 py-2 text-label-md bg-white focus:outline-none focus:ring-2 focus:ring-secondary/30 placeholder:text-outline">
+        </div>
+        <div>
+          <div class="flex justify-between items-center mb-1">
+            <label class="text-label-sm text-on-surface-variant">Radius</label>
+            <span id="radiusLabel" class="text-label-sm font-semibold text-secondary">5 miles</span>
+          </div>
+          <input id="radiusSlider" type="range" min="1" max="30" value="5"
+                 oninput="document.getElementById('radiusLabel').textContent = this.value + ' miles';"
+                 class="w-full accent-secondary">
+        </div>
+        <div>
+          <label class="block text-label-sm text-on-surface-variant mb-1">Property Type</label>
+          <select id="propTypeSelect"
+                  class="w-full border border-outline-variant rounded-lg px-3 py-2 text-label-sm bg-white focus:outline-none focus:ring-2 focus:ring-secondary/30">
+            <option value="">All Types</option>
+            <option value="Single Family">Single Family</option>
+            <option value="Condo">Condo</option>
+            <option value="Townhouse">Townhouse</option>
+            <option value="Multi-Family">Multi-Family</option>
+            <option value="Apartment">Apartment</option>
+          </select>
+        </div>
+        <button id="searchBtn" onclick="fetchAndRender()"
+                class="w-full py-2.5 bg-secondary text-white text-label-md font-semibold rounded-lg hover:bg-secondary/90 transition-colors flex items-center justify-center gap-2">
+          <span class="material-symbols-outlined" style="font-size:18px">search</span>
+          Load Heatmap
+        </button>
+      </div>
+    </div>
+
+    <!-- Metric selector -->
+    <div class="bg-white border border-outline-variant rounded-lg overflow-hidden">
+      <div class="px-stack-md py-3 border-b border-outline-variant bg-surface-container-low">
+        <h3 class="text-label-md font-semibold text-primary">Metric</h3>
+      </div>
+      <div class="p-stack-md space-y-2">
+        {% for value, label, desc in [
+          ("price",         "Sale Price",    "Last recorded sale price"),
+          ("price_per_sqft","Price / sq ft", "Sale price per square foot"),
+          ("dom",           "Days on Market","Time on market before sale"),
+        ] %}
+        <label class="flex items-start gap-3 p-2.5 rounded-lg cursor-pointer hover:bg-surface-container-low transition-colors border border-transparent has-[:checked]:border-secondary has-[:checked]:bg-secondary-fixed">
+          <input type="radio" name="metric" value="{{ value }}" {% if loop.first %}checked{% endif %}
+                 class="mt-0.5 accent-secondary" onchange="onMetricChange()">
+          <div>
+            <p class="text-label-md font-medium text-primary">{{ label }}</p>
+            <p class="text-label-sm text-on-surface-variant">{{ desc }}</p>
+          </div>
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Display options -->
+    <div class="bg-white border border-outline-variant rounded-lg overflow-hidden">
+      <div class="px-stack-md py-3 border-b border-outline-variant bg-surface-container-low">
+        <h3 class="text-label-md font-semibold text-primary">Display</h3>
+      </div>
+      <div class="p-stack-md space-y-3">
+        <div>
+          <div class="flex justify-between items-center mb-1">
+            <label class="text-label-sm text-on-surface-variant">Heatmap opacity</label>
+            <span id="opacityLabel" class="text-label-sm font-semibold text-secondary">70%</span>
+          </div>
+          <input id="opacitySlider" type="range" min="20" max="95" value="70"
+                 oninput="document.getElementById('opacityLabel').textContent = this.value + '%'; updateOpacity();"
+                 class="w-full accent-secondary">
+        </div>
+        <div>
+          <div class="flex justify-between items-center mb-1">
+            <label class="text-label-sm text-on-surface-variant">Blur radius</label>
+            <span id="blurLabel" class="text-label-sm font-semibold text-secondary">12px</span>
+          </div>
+          <input id="blurSlider" type="range" min="2" max="40" value="12"
+                 oninput="document.getElementById('blurLabel').textContent = this.value + 'px'; rerenderIfData();"
+                 class="w-full accent-secondary">
+        </div>
+        <label class="flex items-center gap-2 cursor-pointer">
+          <input type="checkbox" id="showDots" checked class="accent-secondary rounded"
+                 onchange="rerenderIfData()">
+          <span class="text-label-sm text-on-surface">Show property dots</span>
+        </label>
+      </div>
+    </div>
+
+    <!-- Stats -->
+    <div id="statsCard" class="bg-white border border-outline-variant rounded-lg overflow-hidden hidden">
+      <div class="px-stack-md py-3 border-b border-outline-variant bg-surface-container-low">
+        <h3 class="text-label-md font-semibold text-primary">Stats</h3>
+      </div>
+      <div class="p-stack-md space-y-2 text-label-sm">
+        <div class="flex justify-between"><span class="text-on-surface-variant">Properties loaded</span><span id="statCount" class="font-semibold text-primary">—</span></div>
+        <div class="flex justify-between"><span class="text-on-surface-variant">With metric data</span><span id="statValid" class="font-semibold text-primary">—</span></div>
+        <div class="flex justify-between"><span class="text-on-surface-variant">Minimum</span><span id="statMin" class="font-semibold text-on-tertiary-container">—</span></div>
+        <div class="flex justify-between"><span class="text-on-surface-variant">Maximum</span><span id="statMax" class="font-semibold text-error">—</span></div>
+        <div class="flex justify-between"><span class="text-on-surface-variant">Median</span><span id="statMed" class="font-semibold text-primary">—</span></div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── Map area ───────────────────────────────────────────────────────────── -->
+  <div class="flex-1 relative rounded-lg overflow-hidden border border-outline-variant">
+
+    <!-- Leaflet map -->
+    <div id="map" class="absolute inset-0"></div>
+
+    <!-- Canvas overlay (IDW heatmap) -->
+    <canvas id="heatCanvas" class="absolute inset-0 pointer-events-none" style="z-index:400;"></canvas>
+
+    <!-- Legend overlay -->
+    <div id="legend" class="absolute bottom-4 left-4 z-[500] bg-white/90 backdrop-blur-sm border border-outline-variant rounded-lg p-3 hidden" style="min-width:180px">
+      <p id="legendMetric" class="text-label-sm font-semibold text-primary mb-2">Sale Price</p>
+      <div class="h-3 rounded-full mb-1.5" style="background: linear-gradient(to right, #10b981, #f59e0b, #ef4444);"></div>
+      <div class="flex justify-between text-label-sm text-on-surface-variant">
+        <span id="legendMin">—</span>
+        <span class="text-outline">low → high</span>
+        <span id="legendMax">—</span>
+      </div>
+    </div>
+
+    <!-- Loading spinner -->
+    <div id="loadingOverlay" class="absolute inset-0 z-[600] bg-white/70 backdrop-blur-sm hidden flex items-center justify-center">
+      <div class="flex flex-col items-center gap-3">
+        <div class="w-10 h-10 border-4 border-secondary border-t-transparent rounded-full animate-spin"></div>
+        <p class="text-label-md text-on-surface-variant">Loading properties…</p>
+      </div>
+    </div>
+
+    <!-- Empty state overlay -->
+    <div id="emptyState" class="absolute inset-0 z-[500] flex items-center justify-center pointer-events-none">
+      <div class="text-center">
+        <span class="material-symbols-outlined text-outline mb-3 block" style="font-size:56px">map</span>
+        <p class="text-label-md text-on-surface-variant">Click the map to set a center,<br>then click "Load Heatmap".</p>
+      </div>
+    </div>
+
+    <!-- Error toast -->
+    <div id="errorToast" class="absolute top-4 right-4 z-[600] bg-error-container border border-error/30 rounded-lg px-4 py-3 text-label-sm text-on-error-container hidden max-w-xs">
+      <span id="errorMsg"></span>
+    </div>
+
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ── State ─────────────────────────────────────────────────────────────────────
+let allData = [];       // raw API response
+let heatData = [];      // filtered to current metric
+let marker = null;
+let searchCircle = null;
+
+// ── Map init ──────────────────────────────────────────────────────────────────
+const map = L.map('map').setView([29.42, -98.49], 11);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '© OpenStreetMap contributors',
+  maxZoom: 18,
+}).addTo(map);
+
+map.on('click', e => {
+  document.getElementById('latInput').value = e.latlng.lat.toFixed(6);
+  document.getElementById('lngInput').value = e.latlng.lng.toFixed(6);
+  if (marker) map.removeLayer(marker);
+  marker = L.marker(e.latlng).addTo(map);
+  if (searchCircle) map.removeLayer(searchCircle);
+  const r = parseFloat(document.getElementById('radiusSlider').value);
+  searchCircle = L.circle(e.latlng, {
+    radius: r * 1609.34,
+    color: '#3755c3', weight: 1.5,
+    fillColor: '#3755c3', fillOpacity: 0.05,
+    dashArray: '4 4',
+  }).addTo(map);
+});
+
+document.getElementById('radiusSlider').addEventListener('input', () => {
+  if (!marker) return;
+  const lat = parseFloat(document.getElementById('latInput').value);
+  const lng = parseFloat(document.getElementById('lngInput').value);
+  if (isNaN(lat) || isNaN(lng)) return;
+  if (searchCircle) map.removeLayer(searchCircle);
+  const r = parseFloat(document.getElementById('radiusSlider').value);
+  searchCircle = L.circle([lat, lng], {
+    radius: r * 1609.34,
+    color: '#3755c3', weight: 1.5,
+    fillColor: '#3755c3', fillOpacity: 0.05,
+    dashArray: '4 4',
+  }).addTo(map);
+});
+
+// Re-render on map move/zoom (canvas coordinate space changes)
+map.on('moveend zoomend', () => { if (heatData.length > 0) renderHeatmap(); });
+
+// ── Color utils ───────────────────────────────────────────────────────────────
+function tToRGB(t) {
+  // Green (#10b981) → Amber (#f59e0b) → Red (#ef4444)
+  const stops = [
+    [16,  185, 129],
+    [245, 158, 11],
+    [239, 68,  68],
+  ];
+  const seg = Math.max(0, Math.min(1, t)) * (stops.length - 1);
+  const i = Math.min(Math.floor(seg), stops.length - 2);
+  const f = seg - i;
+  return stops[i].map((c, j) => Math.round(c + (stops[i+1][j] - c) * f));
+}
+
+// ── Metric helpers ────────────────────────────────────────────────────────────
+function currentMetric() {
+  return document.querySelector('input[name="metric"]:checked').value;
+}
+
+const METRIC_LABELS = {
+  price:         'Sale Price',
+  price_per_sqft:'Price / sq ft',
+  dom:           'Days on Market',
+};
+
+function formatMetric(v, metric) {
+  if (v == null) return '—';
+  if (metric === 'price')         return '$' + Math.round(v).toLocaleString();
+  if (metric === 'price_per_sqft')return '$' + v.toFixed(0) + '/sqft';
+  if (metric === 'dom')           return v.toFixed(0) + ' days';
+  return String(v);
+}
+
+function buildHeatData(metric) {
+  return allData
+    .filter(p => p[metric] != null && p.lat && p.lng)
+    .map(p => ({ lat: p.lat, lng: p.lng, value: p[metric], raw: p }));
+}
+
+// ── Fetch ─────────────────────────────────────────────────────────────────────
+async function fetchAndRender() {
+  const lat = parseFloat(document.getElementById('latInput').value);
+  const lng = parseFloat(document.getElementById('lngInput').value);
+  if (isNaN(lat) || isNaN(lng)) {
+    showError('Click the map to set a center point first.');
+    return;
+  }
+
+  const radius   = document.getElementById('radiusSlider').value;
+  const propType = document.getElementById('propTypeSelect').value;
+
+  showLoading(true);
+  hideEmpty();
+  clearError();
+
+  try {
+    const params = new URLSearchParams({ lat, lng, radius, propertyType: propType });
+    const res = await fetch('/api/heatmap-data?' + params);
+    const json = await res.json();
+    if (json.error) throw new Error(json.error);
+
+    allData = json;
+    const metric = currentMetric();
+    heatData = buildHeatData(metric);
+
+    if (heatData.length === 0) {
+      showError(`No properties with "${METRIC_LABELS[metric]}" data found in this area.`);
+      showLoading(false);
+      return;
+    }
+
+    renderHeatmap();
+    updateStats(metric);
+  } catch (e) {
+    showError(e.message);
+  } finally {
+    showLoading(false);
+  }
+}
+
+function onMetricChange() {
+  if (allData.length === 0) return;
+  const metric = currentMetric();
+  heatData = buildHeatData(metric);
+  if (heatData.length > 0) {
+    renderHeatmap();
+    updateStats(metric);
+  } else {
+    showError(`No data for "${METRIC_LABELS[metric]}" in the loaded area.`);
+  }
+}
+
+function rerenderIfData() {
+  if (heatData.length > 0) renderHeatmap();
+}
+
+// ── IDW Heatmap rendering ─────────────────────────────────────────────────────
+function renderHeatmap() {
+  const canvas = document.getElementById('heatCanvas');
+  const mapEl  = document.getElementById('map');
+  canvas.width  = mapEl.clientWidth;
+  canvas.height = mapEl.clientHeight;
+  const W = canvas.width;
+  const H = canvas.height;
+
+  if (heatData.length === 0) return;
+
+  // Convert lat/lng → pixel coords once
+  const pts = heatData.map(p => ({
+    px:    map.latLngToContainerPoint([p.lat, p.lng]),
+    value: p.value,
+    raw:   p.raw,
+  }));
+
+  // Value range
+  const values = pts.map(p => p.value);
+  const minV = Math.min(...values);
+  const maxV = Math.max(...values);
+  const range = maxV - minV || 1;
+
+  // Render at reduced resolution for speed, then scale+blur
+  const scale = Math.max(0.08, Math.min(0.18, 800 / (W * pts.length ** 0.3)));
+  const TW = Math.max(4, Math.ceil(W * scale));
+  const TH = Math.max(4, Math.ceil(H * scale));
+
+  const temp = document.createElement('canvas');
+  temp.width  = TW;
+  temp.height = TH;
+  const tCtx = temp.getContext('2d');
+  const imgData = tCtx.createImageData(TW, TH);
+  const d = imgData.data;
+
+  // IDW: for each low-res pixel compute weighted average of all data points
+  for (let ty = 0; ty < TH; ty++) {
+    for (let tx = 0; tx < TW; tx++) {
+      const cx = (tx + 0.5) / scale;
+      const cy = (ty + 0.5) / scale;
+
+      let num = 0, den = 0, exact = false;
+      for (const p of pts) {
+        const dx = cx - p.px.x;
+        const dy = cy - p.px.y;
+        const d2 = dx * dx + dy * dy;
+        if (d2 < 4) { num = p.value; den = 1; exact = true; break; }
+        const w = 1 / d2;
+        num += w * p.value;
+        den += w;
+      }
+
+      const val = den > 0 ? num / den : minV;
+      const t   = (val - minV) / range;
+      const [r, g, b] = tToRGB(t);
+      const idx = (ty * TW + tx) * 4;
+      d[idx]   = r;
+      d[idx+1] = g;
+      d[idx+2] = b;
+      d[idx+3] = 220;
+    }
+  }
+  tCtx.putImageData(imgData, 0, 0);
+
+  // Draw to main canvas: scale up + blur for smooth field
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, W, H);
+  const blurPx = parseInt(document.getElementById('blurSlider').value);
+  ctx.filter = `blur(${blurPx}px)`;
+  ctx.drawImage(temp, 0, 0, W, H);
+  ctx.filter = 'none';
+
+  // Overlay property dots
+  if (document.getElementById('showDots').checked) {
+    pts.forEach(p => {
+      const t = (p.value - minV) / range;
+      const [r, g, b] = tToRGB(t);
+      ctx.beginPath();
+      ctx.arc(p.px.x, p.px.y, 4, 0, Math.PI * 2);
+      ctx.fillStyle = `rgb(${r},${g},${b})`;
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    });
+  }
+
+  // Opacity
+  canvas.style.opacity = document.getElementById('opacitySlider').value / 100;
+
+  // Legend
+  const metric = currentMetric();
+  document.getElementById('legendMetric').textContent = METRIC_LABELS[metric];
+  document.getElementById('legendMin').textContent = formatMetric(minV, metric);
+  document.getElementById('legendMax').textContent = formatMetric(maxV, metric);
+  document.getElementById('legend').classList.remove('hidden');
+}
+
+// ── Stats panel ───────────────────────────────────────────────────────────────
+function updateStats(metric) {
+  const values = heatData.map(p => p.value).sort((a, b) => a - b);
+  const med = values[Math.floor(values.length / 2)];
+
+  document.getElementById('statCount').textContent = allData.length;
+  document.getElementById('statValid').textContent = heatData.length;
+  document.getElementById('statMin').textContent   = formatMetric(values[0], metric);
+  document.getElementById('statMax').textContent   = formatMetric(values[values.length - 1], metric);
+  document.getElementById('statMed').textContent   = formatMetric(med, metric);
+  document.getElementById('statsCard').classList.remove('hidden');
+}
+
+// ── UI helpers ────────────────────────────────────────────────────────────────
+function updateOpacity() {
+  const canvas = document.getElementById('heatCanvas');
+  canvas.style.opacity = document.getElementById('opacitySlider').value / 100;
+}
+
+function showLoading(on) {
+  document.getElementById('loadingOverlay').classList.toggle('hidden', !on);
+}
+
+function hideEmpty() {
+  document.getElementById('emptyState').classList.add('hidden');
+}
+
+function showError(msg) {
+  const t = document.getElementById('errorToast');
+  document.getElementById('errorMsg').textContent = msg;
+  t.classList.remove('hidden');
+  setTimeout(() => t.classList.add('hidden'), 5000);
+}
+
+function clearError() {
+  document.getElementById('errorToast').classList.add('hidden');
+}
+
+// Tooltip on dot hover
+map.on('mousemove', e => {
+  if (heatData.length === 0) return;
+  const pt = map.latLngToContainerPoint(e.latlng);
+  const pts = heatData.map(p => ({
+    ...p,
+    px: map.latLngToContainerPoint([p.lat, p.lng]),
+  }));
+  const nearest = pts.reduce((best, p) => {
+    const d2 = (pt.x - p.px.x) ** 2 + (pt.y - p.px.y) ** 2;
+    return d2 < best.d2 ? { ...p, d2 } : best;
+  }, { d2: Infinity });
+
+  if (nearest.d2 < 300) {
+    map.getContainer().title =
+      [nearest.raw?.address, formatMetric(nearest.value, currentMetric())].filter(Boolean).join('\n');
+  } else {
+    map.getContainer().title = '';
+  }
+});
+</script>
+{% endblock %}
