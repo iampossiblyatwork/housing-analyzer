@@ -1,83 +1,106 @@
 {% extends "base.html" %}
 {% block title %}Housing Analyzer{% endblock %}
-{% block content %}
+{% block page_title %}Market Analysis{% endblock %}
 
-<div class="row justify-content-center mb-5">
-  <div class="col-lg-8 text-center">
-    <h1 class="display-5 fw-bold mb-2">Real Estate Market Analyzer</h1>
-    <p class="text-muted">Search markets, look up properties, compare areas, and set smart alerts.</p>
-  </div>
+{% block content %}
+<div class="mb-stack-lg">
+  <h2 class="text-headline-lg text-primary tracking-tight">Housing Research Portal</h2>
+  <p class="text-body-md text-on-surface-variant mt-1">Search markets, look up properties, compare areas, and set smart alerts.</p>
 </div>
 
-<div class="row g-4 justify-content-center">
+<div class="grid grid-cols-1 md:grid-cols-2 gap-gutter max-w-3xl">
 
   <!-- Market Analysis -->
-  <div class="col-md-6 col-lg-5">
-    <div class="card h-100 shadow-sm">
-      <div class="card-body">
-        <h5 class="card-title"><i class="bi bi-graph-up-arrow text-primary me-2"></i>Market Analysis</h5>
-        <p class="card-text text-muted small">Rental &amp; sale trends, pricing, days on market, and breakdown by property type for any zip code.</p>
-        <form action="/market" method="get">
-          <div class="input-group">
-            <input type="text" class="form-control" name="zip" placeholder="Zip code (e.g. 78244)" required>
-            <button class="btn btn-primary" type="submit">Analyze</button>
-          </div>
-          <div class="mt-2">
-            <label class="form-label small text-muted">History range</label>
-            <select name="history" class="form-select form-select-sm">
-              <option value="6">6 months</option>
-              <option value="12" selected>12 months</option>
-              <option value="24">24 months</option>
-            </select>
-          </div>
-        </form>
-      </div>
+  <div class="bg-white border border-outline-variant rounded-lg p-stack-md hover:shadow-elevated transition-shadow">
+    <div class="flex items-center gap-2 mb-3">
+      <span class="material-symbols-outlined filled text-secondary" style="font-size:22px">dashboard</span>
+      <h3 class="text-label-md font-semibold text-primary">Market Analysis</h3>
     </div>
+    <p class="text-label-sm text-on-surface-variant mb-4">Rental &amp; sale trends, pricing, days on market, and insights for any ZIP code.</p>
+    <form action="/market" method="get" class="space-y-2">
+      <div class="flex gap-2">
+        <input type="text" name="zip" placeholder="ZIP code (e.g. 78244)" required
+               class="flex-1 border border-outline-variant rounded-lg px-3 py-2 text-label-md bg-white focus:outline-none focus:ring-2 focus:ring-secondary/30 focus:border-secondary transition-all placeholder:text-outline">
+        <button type="submit" class="px-4 py-2 bg-secondary text-white text-label-md font-medium rounded-lg hover:bg-secondary/90 transition-colors whitespace-nowrap">
+          Analyze
+        </button>
+      </div>
+      <div class="flex items-center gap-2">
+        <label class="text-label-sm text-on-surface-variant whitespace-nowrap">History:</label>
+        <select name="history" class="flex-1 border border-outline-variant rounded-lg px-2 py-1.5 text-label-sm bg-white focus:outline-none focus:ring-2 focus:ring-secondary/30">
+          <option value="6">6 months</option>
+          <option value="12" selected>12 months</option>
+          <option value="24">24 months</option>
+        </select>
+      </div>
+    </form>
   </div>
 
   <!-- Property Lookup -->
-  <div class="col-md-6 col-lg-5">
-    <div class="card h-100 shadow-sm">
-      <div class="card-body">
-        <h5 class="card-title"><i class="bi bi-house-check text-success me-2"></i>Property Lookup</h5>
-        <p class="card-text text-muted small">Get rent and sale value estimates plus property details for a specific address.</p>
-        <form action="/property" method="get">
-          <div class="input-group">
-            <input type="text" class="form-control" name="address" placeholder="123 Main St, City, TX 78244" required>
-            <button class="btn btn-success" type="submit">Look Up</button>
-          </div>
-        </form>
-      </div>
+  <div class="bg-white border border-outline-variant rounded-lg p-stack-md hover:shadow-elevated transition-shadow">
+    <div class="flex items-center gap-2 mb-3">
+      <span class="material-symbols-outlined filled text-on-tertiary-container" style="font-size:22px">home_work</span>
+      <h3 class="text-label-md font-semibold text-primary">Property Lookup</h3>
     </div>
+    <p class="text-label-sm text-on-surface-variant mb-4">Get rent &amp; sale estimates, property details, and investor metrics for a specific address.</p>
+    <form action="/property" method="get">
+      <div class="flex gap-2">
+        <input type="text" name="address" placeholder="123 Main St, City, TX 78244" required
+               class="flex-1 border border-outline-variant rounded-lg px-3 py-2 text-label-md bg-white focus:outline-none focus:ring-2 focus:ring-secondary/30 focus:border-secondary transition-all placeholder:text-outline">
+        <button type="submit" class="px-4 py-2 bg-on-tertiary-container text-white text-label-md font-medium rounded-lg hover:opacity-90 transition-opacity whitespace-nowrap">
+          Look Up
+        </button>
+      </div>
+    </form>
   </div>
 
-  <!-- Compare -->
-  <div class="col-md-6 col-lg-5">
-    <div class="card h-100 shadow-sm">
-      <div class="card-body">
-        <h5 class="card-title"><i class="bi bi-bar-chart-line text-warning me-2"></i>Compare Markets</h5>
-        <p class="card-text text-muted small">Side-by-side comparison of two zip codes across all key metrics.</p>
-        <form action="/compare" method="get">
-          <div class="row g-2">
-            <div class="col"><input type="text" class="form-control" name="zip1" placeholder="Zip 1" required></div>
-            <div class="col"><input type="text" class="form-control" name="zip2" placeholder="Zip 2" required></div>
-          </div>
-          <button class="btn btn-warning mt-2 w-100" type="submit">Compare</button>
-        </form>
-      </div>
+  <!-- Compare Markets -->
+  <div class="bg-white border border-outline-variant rounded-lg p-stack-md hover:shadow-elevated transition-shadow">
+    <div class="flex items-center gap-2 mb-3">
+      <span class="material-symbols-outlined filled text-amber-600" style="font-size:22px">compare_arrows</span>
+      <h3 class="text-label-md font-semibold text-primary">Compare Markets</h3>
     </div>
+    <p class="text-label-sm text-on-surface-variant mb-4">Side-by-side comparison of two ZIP codes across all key metrics.</p>
+    <form action="/compare" method="get" class="space-y-2">
+      <div class="flex gap-2">
+        <input type="text" name="zip1" placeholder="ZIP 1" required
+               class="flex-1 border border-outline-variant rounded-lg px-3 py-2 text-label-md bg-white focus:outline-none focus:ring-2 focus:ring-secondary/30 placeholder:text-outline">
+        <input type="text" name="zip2" placeholder="ZIP 2" required
+               class="flex-1 border border-outline-variant rounded-lg px-3 py-2 text-label-md bg-white focus:outline-none focus:ring-2 focus:ring-secondary/30 placeholder:text-outline">
+        <button type="submit" class="px-4 py-2 bg-amber-500 text-white text-label-md font-medium rounded-lg hover:bg-amber-600 transition-colors">
+          Compare
+        </button>
+      </div>
+    </form>
   </div>
 
-  <!-- Geofence -->
-  <div class="col-md-6 col-lg-5">
-    <div class="card h-100 shadow-sm">
-      <div class="card-body">
-        <h5 class="card-title"><i class="bi bi-geo-alt text-danger me-2"></i>Geofence Search</h5>
-        <p class="card-text text-muted small">Drop a pin on a map, set a radius, and find all properties within that area.</p>
-        <a href="/geofence" class="btn btn-danger w-100">Open Map Search</a>
-      </div>
+  <!-- Geofence Search -->
+  <div class="bg-white border border-outline-variant rounded-lg p-stack-md hover:shadow-elevated transition-shadow">
+    <div class="flex items-center gap-2 mb-3">
+      <span class="material-symbols-outlined filled text-red-600" style="font-size:22px">location_on</span>
+      <h3 class="text-label-md font-semibold text-primary">Geofence Search</h3>
     </div>
+    <p class="text-label-sm text-on-surface-variant mb-4">Drop a pin, set a radius, and find all properties within that area on an interactive map.</p>
+    <a href="/geofence" class="block w-full text-center px-4 py-2 bg-red-600 text-white text-label-md font-medium rounded-lg hover:bg-red-700 transition-colors">
+      Open Map Search
+    </a>
   </div>
 
+</div>
+
+<!-- Quick links row -->
+<div class="mt-stack-lg flex gap-3 flex-wrap">
+  <a href="/investor" class="flex items-center gap-2 px-4 py-2 border border-secondary text-secondary text-label-md rounded-lg hover:bg-secondary-fixed transition-colors">
+    <span class="material-symbols-outlined" style="font-size:18px">trending_up</span>
+    Investor Calculator
+  </a>
+  <a href="/reference" class="flex items-center gap-2 px-4 py-2 border border-outline-variant text-on-surface-variant text-label-md rounded-lg hover:bg-surface-container-high transition-colors">
+    <span class="material-symbols-outlined" style="font-size:18px">menu_book</span>
+    Metrics Reference
+  </a>
+  <a href="/alerts" class="flex items-center gap-2 px-4 py-2 border border-outline-variant text-on-surface-variant text-label-md rounded-lg hover:bg-surface-container-high transition-colors">
+    <span class="material-symbols-outlined" style="font-size:18px">notifications</span>
+    Manage Alerts
+  </a>
 </div>
 {% endblock %}

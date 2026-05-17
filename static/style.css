@@ -1,6 +1,16 @@
-body { background-color: #f8f9fa; }
-.navbar-brand { letter-spacing: 1px; }
-.card { border-radius: 10px; }
-.card-header { border-radius: 10px 10px 0 0 !important; background: #f1f3f5; font-size: .95rem; }
-canvas { max-height: 300px; }
+/* Precision Analytical — custom utilities */
+body { font-family: 'Inter', sans-serif; }
+
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+  vertical-align: middle;
+}
+.material-symbols-outlined.filled {
+  font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+
+.scroll-hide::-webkit-scrollbar { display: none; }
+.scroll-hide { -ms-overflow-style: none; scrollbar-width: none; }
+
+canvas { max-height: 280px; }
 #map { z-index: 0; }

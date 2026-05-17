@@ -1,0 +1,290 @@
+{% extends "base.html" %}
+{% block title %}Metrics Reference{% endblock %}
+{% block page_title %}Metrics Reference{% endblock %}
+
+{% block content %}
+<div class="mb-stack-lg">
+  <h2 class="text-headline-lg text-primary tracking-tight">Metrics Reference</h2>
+  <p class="text-body-md text-on-surface-variant mt-1">Source: <em>Measuring Real Estate Trend and Health: A Professional Reference</em>. Single metrics deceive; combinations diagnose.</p>
+</div>
+
+<!-- Section nav pills -->
+<div class="flex flex-wrap gap-2 mb-stack-lg">
+  {% for anchor, label in [
+    ("#supply",    "1. Supply"),
+    ("#demand",    "2. Demand"),
+    ("#pricing",   "3. Pricing"),
+    ("#afford",    "4. Affordability"),
+    ("#investor",  "5. Investor"),
+    ("#econ",      "6. Economic Drivers"),
+    ("#patterns",  "7. Analytical Patterns"),
+    ("#sources",   "8. Data Sources"),
+  ] %}
+  <a href="{{ anchor }}" class="px-3 py-1.5 text-label-sm border border-outline-variant rounded-full text-on-surface-variant hover:bg-surface-container-high hover:text-primary transition-colors">
+    {{ label }}
+  </a>
+  {% endfor %}
+</div>
+
+<!-- ── 1. Supply ───────────────────────────────────────────────────────────── -->
+<section id="supply" class="mb-stack-lg scroll-mt-20">
+  <h3 class="text-headline-md font-semibold text-primary mb-4 pb-2 border-b border-outline-variant">1. Supply Indicators</h3>
+  <div class="space-y-4">
+
+    <div class="bg-white border border-outline-variant rounded-lg overflow-hidden">
+      <div class="px-stack-md py-3 border-b border-outline-variant bg-surface-container-low">
+        <h4 class="text-label-md font-semibold text-primary">Months of Supply (MOS) / Months of Inventory</h4>
+        <p class="text-label-sm text-on-surface-variant mt-0.5">Active listings ÷ trailing avg monthly sales pace. Most widely used single measure of market balance.</p>
+      </div>
+      <div class="p-stack-md grid grid-cols-2 md:grid-cols-5 gap-3">
+        {% for threshold, label, color in [
+          ("< 3 months",   "Strong seller's market",          "bg-red-50 text-red-700 border-red-200"),
+          ("3–5 months",   "Tightening / mild seller's",      "bg-amber-50 text-amber-700 border-amber-200"),
+          ("5–7 months",   "Balanced market",                 "bg-emerald-50 text-emerald-700 border-emerald-200"),
+          ("> 7 months",   "Buyer's market",                  "bg-blue-50 text-blue-700 border-blue-200"),
+          ("> 10 months",  "Distressed / oversupplied",       "bg-slate-50 text-slate-600 border-slate-200"),
+        ] %}
+        <div class="border {{ color }} rounded-lg p-2.5 text-center">
+          <p class="text-label-sm font-bold mb-1">{{ threshold }}</p>
+          <p class="text-label-sm">{{ label }}</p>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    {% for title, body in [
+      ("Absorption Rate", "Inverse of MOS — homes sold in a period ÷ active inventory, as a percentage. > 20% = strong seller's market; < 15% = buyer's market. Typical residential range: 10–50%, with 50% representing ~2 months of inventory."),
+      ("Active Listing Count (YoY)", "Headline inventory numbers are seasonal — always compare YoY. Rising inventory + flat/rising sales = healthy expansion. Rising inventory + falling sales = classic early signal of a turn. New listings vs. pending sales reveal WHY inventory is moving."),
+      ("New Listings vs. Pending Sales", "The flow side of inventory. Active inventory can rise because more sellers are listing (supply expansion) OR because buyers stopped absorbing (demand contraction). New listings tell you which."),
+      ("Withdrawn / Delisted Rate", "An underused indicator. Listings disappearing without selling signal seller capitulation on price expectations — a hidden supply overhang. ~60% of listings were withdrawn by November 2025, capturing shadow supply that headline inventory misses."),
+      ("Housing Starts & Building Permits", "Forward-supply pipeline (Census/HUD). Permits lead starts; starts lead completions; completions lead inventory and rents. Compare starts to permits — divergence signals a trend change. Trust permits for direction. Housing turns before the broader economy at both peaks and troughs."),
+    ] %}
+    <details class="group bg-white border border-outline-variant rounded-lg overflow-hidden">
+      <summary class="flex items-center justify-between px-stack-md py-3 cursor-pointer text-label-md font-semibold text-primary list-none select-none hover:bg-surface-container-low transition-colors">
+        {{ title }}
+        <span class="material-symbols-outlined text-outline group-open:rotate-180 transition-transform shrink-0" style="font-size:18px">expand_more</span>
+      </summary>
+      <div class="px-stack-md pb-3 border-t border-outline-variant">
+        <p class="text-label-sm text-on-surface-variant leading-relaxed pt-3">{{ body }}</p>
+      </div>
+    </details>
+    {% endfor %}
+
+  </div>
+</section>
+
+<!-- ── 2. Demand ──────────────────────────────────────────────────────────── -->
+<section id="demand" class="mb-stack-lg scroll-mt-20">
+  <h3 class="text-headline-md font-semibold text-primary mb-4 pb-2 border-b border-outline-variant">2. Demand Indicators</h3>
+  <!-- Lead time chain -->
+  <div class="bg-surface-container-low border border-outline-variant rounded-lg p-stack-md mb-4">
+    <p class="text-label-sm text-on-surface-variant mb-3 font-semibold uppercase tracking-wider">Lead Time Chain (earliest → lagging)</p>
+    <div class="flex flex-wrap items-center gap-2 text-label-sm">
+      {% for sig, lead in demand_lead_times.items() %}
+      <div class="flex flex-col items-center text-center">
+        <span class="px-3 py-1.5 bg-white border border-outline-variant rounded-lg font-medium text-primary capitalize">{{ sig.replace('_', ' ') }}</span>
+        <span class="text-outline mt-1 text-[11px]">{{ lead.split('—')[0].strip() }}</span>
+      </div>
+      {% if not loop.last %}<span class="material-symbols-outlined text-outline" style="font-size:16px">arrow_forward</span>{% endif %}
+      {% endfor %}
+    </div>
+  </div>
+  <div class="space-y-3">
+    {% for title, body in [
+      ("Pending Home Sales", "Contracts signed but not yet closed — the cleanest near-term demand read because it captures buyer commitment before the 30–60 day closing lag. NAR publishes the national index; Redfin publishes weekly metro data."),
+      ("Mortgage Purchase Applications (MBA)", "The earliest available demand signal. Purchase applications generally lead closed sales by 30–90 days. Track the MBA Purchase Index separately from refi activity — the two respond to different drivers."),
+      ("Days on Market (DOM)", "Faster than closed-sales data and directly reflects buyer urgency. Hot markets: DOM < 30 days. Cooling markets: DOM > 40 days. Always compare to the same metric a year prior — DOM is highly seasonal."),
+      ("Sale-to-List Price Ratio (SNLR)", "The single best read on negotiating power. A ratio above 100% = sellers receiving over asking. A drop from ~100% to ~98% is a meaningful shift even though the headline looks small. > 60% of time at/above list = seller's market; < 40% = buyer's market."),
+      ("NAHB Housing Market Index (Builder Confidence)", "The earliest signal in the entire data chain — leads permits and starts by 1–3 months. When builders turn pessimistic they pull back permit applications before starts drop. Chain: NAHB → Permits → Starts → Completions → Inventory/Rents."),
+    ] %}
+    <details class="group bg-white border border-outline-variant rounded-lg overflow-hidden">
+      <summary class="flex items-center justify-between px-stack-md py-3 cursor-pointer text-label-md font-semibold text-primary list-none select-none hover:bg-surface-container-low transition-colors">
+        {{ title }}
+        <span class="material-symbols-outlined text-outline group-open:rotate-180 transition-transform shrink-0" style="font-size:18px">expand_more</span>
+      </summary>
+      <div class="px-stack-md pb-3 border-t border-outline-variant">
+        <p class="text-label-sm text-on-surface-variant leading-relaxed pt-3">{{ body }}</p>
+      </div>
+    </details>
+    {% endfor %}
+  </div>
+</section>
+
+<!-- ── 3. Pricing ─────────────────────────────────────────────────────────── -->
+<section id="pricing" class="mb-stack-lg scroll-mt-20">
+  <h3 class="text-headline-md font-semibold text-primary mb-4 pb-2 border-b border-outline-variant">3. Pricing Indicators</h3>
+  <div class="bg-amber-50 border border-amber-200 rounded-lg p-stack-md mb-4 flex gap-2 text-label-sm text-amber-800">
+    <span class="material-symbols-outlined filled text-amber-500 shrink-0" style="font-size:18px">warning</span>
+    <p>The most common error in market analysis is comparing across price measures that use different methodologies. Always know which index produced the number you're quoting.</p>
+  </div>
+  <!-- Price index cards -->
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-gutter mb-4">
+    {% for key, idx in price_indices.items() %}
+    <div class="bg-white border border-outline-variant rounded-lg p-stack-md">
+      <p class="text-label-sm text-on-surface-variant uppercase tracking-wider mb-1">{{ idx.methodology }}</p>
+      <h4 class="text-label-md font-semibold text-primary mb-2">{{ idx.name }}</h4>
+      <div class="space-y-1 text-label-sm text-on-surface-variant">
+        <p><span class="font-medium text-primary">Coverage:</span> {{ idx.coverage }}</p>
+        <p><span class="font-medium text-primary">Lag:</span> {{ idx.lag }}</p>
+        <p><span class="font-medium text-on-tertiary-container">Strengths:</span> {{ idx.strengths }}</p>
+        <p><span class="font-medium text-error">Limitations:</span> {{ idx.limitations }}</p>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  <div class="space-y-3">
+    {% for title, body in [
+      ("Median Sale Price", "Useful only with caveats. Movement can reflect either appreciation OR compositional shift (more high-end homes selling). Always pair with price-per-sq-ft and a repeat-sales index."),
+      ("Median Price per Square Foot", "The cleaner pricing measure for short-window comparisons because it partially controls for size mix. Most useful at neighborhood and ZIP-code level where Case-Shiller is unavailable."),
+      ("Price Cuts / Reduction Share", "The percent of active listings with at least one price reduction. A direct read on seller capitulation and one of the fastest indicators of softening demand — moves before closed-sale prices do."),
+    ] %}
+    <details class="group bg-white border border-outline-variant rounded-lg overflow-hidden">
+      <summary class="flex items-center justify-between px-stack-md py-3 cursor-pointer text-label-md font-semibold text-primary list-none select-none hover:bg-surface-container-low transition-colors">
+        {{ title }}
+        <span class="material-symbols-outlined text-outline group-open:rotate-180 transition-transform shrink-0" style="font-size:18px">expand_more</span>
+      </summary>
+      <div class="px-stack-md pb-3 border-t border-outline-variant">
+        <p class="text-label-sm text-on-surface-variant leading-relaxed pt-3">{{ body }}</p>
+      </div>
+    </details>
+    {% endfor %}
+  </div>
+</section>
+
+<!-- ── 4. Affordability ───────────────────────────────────────────────────── -->
+<section id="afford" class="mb-stack-lg scroll-mt-20">
+  <h3 class="text-headline-md font-semibold text-primary mb-4 pb-2 border-b border-outline-variant">4. Affordability &amp; Financial Stress</h3>
+  <div class="space-y-3">
+    {% for title, body in [
+      ("NAR Housing Affordability Index", "Whether a median-income family can qualify for a median-priced home. Values above 100 = family qualifies; below 100 = family falls short."),
+      ("Price-to-Income Ratio", "Median home price ÷ median household income. U.S. historical norm: 3–4×. Sustained readings above 5× signal affordability stress and elevated correction risk."),
+      ("Price-to-Rent Ratio", "Median home price ÷ median annual rent. < 15× = buying is cheaper; 15–20× = borderline; > 20× = renting may be more economical. One of the most useful cross-market metrics. San Francisco and San Jose: ~45× and 40× (early 2026). Detroit: ~8×."),
+      ("Mortgage Rate Sensitivity", "Each 1% increase in mortgage rates reduces purchasing power by ~10–11%. Track the 30-year fixed conforming rate alongside the 10-year Treasury — the spread between them widens in periods of credit stress."),
+      ("Rate-Lock-In Effect", "Tracks the spread between the avg outstanding mortgage rate (~3.8%) and the prevailing market rate. A wide spread suppresses existing-home turnover regardless of price trends — critical context for interpreting low inventory in 2024–2026."),
+      ("Mortgage Delinquency & Foreclosure Rates", "Lagging stress indicators — foreclosures spike after economic distress, not during it. Useful for confirming a downturn, not predicting one. Standard sources: MBA National Delinquency Survey and ATTOM foreclosure data."),
+    ] %}
+    <details class="group bg-white border border-outline-variant rounded-lg overflow-hidden">
+      <summary class="flex items-center justify-between px-stack-md py-3 cursor-pointer text-label-md font-semibold text-primary list-none select-none hover:bg-surface-container-low transition-colors">
+        {{ title }}
+        <span class="material-symbols-outlined text-outline group-open:rotate-180 transition-transform shrink-0" style="font-size:18px">expand_more</span>
+      </summary>
+      <div class="px-stack-md pb-3 border-t border-outline-variant">
+        <p class="text-label-sm text-on-surface-variant leading-relaxed pt-3">{{ body }}</p>
+      </div>
+    </details>
+    {% endfor %}
+  </div>
+</section>
+
+<!-- ── 5. Investor Metrics ────────────────────────────────────────────────── -->
+<section id="investor" class="mb-stack-lg scroll-mt-20">
+  <h3 class="text-headline-md font-semibold text-primary mb-4 pb-2 border-b border-outline-variant">5. Investor / Income-Property Metrics</h3>
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-gutter mb-4">
+    {% for title, formula, body in [
+      ("Cap Rate",   "NOI ÷ Purchase Price",               "Standard valuation multiple for income property. Compare to the risk-free rate and local cap rate trends. Cap rate compression signals price appreciation outpacing rent growth — a warning sign for new buyers."),
+      ("NOI",        "Annual Rent − Operating Expenses",   "Measures profitability: total revenue minus operating expenses (property mgmt, maintenance, taxes, insurance). Excludes financing and capital expenditures. Foundation of cap rate and DSCR."),
+      ("DSCR",       "NOI ÷ Annual Debt Service",          "Lenders typically require ≥ 1.25× to ensure stability. Falling DSCR at the market level signals investor stress."),
+      ("GRM",        "Price ÷ Gross Annual Rent",          "Faster, dirtier screening metric than cap rate — useful for first-pass cross-market comparison. Does not account for expenses."),
+      ("Vacancy Rate","—",                                  "Natural vacancy rate is typically 5–7%. Significantly higher suggests oversupply or economic weakness. Vacancy × rent growth gives a cleaner read on rental demand than transaction-based metrics."),
+    ] %}
+    <div class="bg-white border border-outline-variant rounded-lg p-stack-md">
+      <div class="flex items-start justify-between gap-2 mb-2">
+        <h4 class="text-label-md font-semibold text-primary">{{ title }}</h4>
+        {% if formula != "—" %}
+        <span class="text-label-sm text-secondary bg-secondary-fixed px-2 py-0.5 rounded font-mono shrink-0">{{ formula }}</span>
+        {% endif %}
+      </div>
+      <p class="text-label-sm text-on-surface-variant leading-relaxed">{{ body }}</p>
+    </div>
+    {% endfor %}
+  </div>
+  <div class="text-center">
+    <a href="/investor" class="inline-flex items-center gap-2 px-4 py-2 bg-secondary text-white text-label-md font-medium rounded-lg hover:bg-secondary/90 transition-colors">
+      <span class="material-symbols-outlined" style="font-size:18px">calculate</span>
+      Open Investor Calculator
+    </a>
+  </div>
+</section>
+
+<!-- ── 6. Economic Drivers ────────────────────────────────────────────────── -->
+<section id="econ" class="mb-stack-lg scroll-mt-20">
+  <h3 class="text-headline-md font-semibold text-primary mb-4 pb-2 border-b border-outline-variant">6. Economic &amp; Demographic Drivers</h3>
+  <p class="text-label-sm text-on-surface-variant mb-4">These don't measure the housing market directly — they measure what <em>drives</em> it and should be tracked alongside the metrics above.</p>
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+    {% for driver, desc in economic_drivers %}
+    <div class="flex gap-3 bg-white border border-outline-variant rounded-lg p-stack-md">
+      <span class="material-symbols-outlined text-secondary shrink-0" style="font-size:20px">data_object</span>
+      <div>
+        <p class="text-label-md font-semibold text-primary">{{ driver }}</p>
+        <p class="text-label-sm text-on-surface-variant">{{ desc }}</p>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+<!-- ── 7. Analytical Patterns ─────────────────────────────────────────────── -->
+<section id="patterns" class="mb-stack-lg scroll-mt-20">
+  <h3 class="text-headline-md font-semibold text-primary mb-4 pb-2 border-b border-outline-variant">7. Practical Analytical Framework</h3>
+  <p class="text-label-sm text-on-surface-variant mb-4">Single metrics deceive; combinations diagnose. Patterns worth memorizing:</p>
+  <div class="space-y-3 mb-stack-lg">
+    {% for p in analytical_patterns %}
+    <div class="flex gap-3 bg-white border border-outline-variant rounded-lg p-stack-md
+                {% if p.color == 'danger' %}border-l-4 border-l-red-500{% elif p.color == 'success' %}border-l-4 border-l-emerald-500{% elif p.color == 'warning' %}border-l-4 border-l-amber-400{% else %}border-l-4 border-l-blue-400{% endif %}">
+      <div>
+        <p class="text-label-md font-semibold text-primary mb-0.5">{{ p.pattern }}</p>
+        <p class="text-label-sm text-on-surface-variant">→ {{ p.signal }}</p>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <!-- Scope notes -->
+  <h4 class="text-label-md font-semibold text-primary uppercase tracking-wider mb-3">Scope Considerations</h4>
+  <div class="space-y-3 mb-stack-lg">
+    {% for scope, note in scope_notes.items() %}
+    <div class="bg-white border border-outline-variant rounded-lg p-stack-md">
+      <p class="text-label-md font-semibold text-primary mb-1">{{ scope }}</p>
+      <p class="text-label-sm text-on-surface-variant leading-relaxed">{{ note }}</p>
+    </div>
+    {% endfor %}
+  </div>
+
+  <!-- Common pitfalls -->
+  <h4 class="text-label-md font-semibold text-primary uppercase tracking-wider mb-3">Common Pitfalls</h4>
+  <div class="bg-white border border-outline-variant rounded-lg divide-y divide-outline-variant">
+    {% for pitfall in common_pitfalls %}
+    <div class="flex gap-3 px-stack-md py-3">
+      <span class="material-symbols-outlined text-error shrink-0" style="font-size:18px">cancel</span>
+      <p class="text-label-sm text-on-surface">{{ pitfall }}</p>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+<!-- ── 8. Data Sources ─────────────────────────────────────────────────────── -->
+<section id="sources" class="mb-stack-lg scroll-mt-20">
+  <h3 class="text-headline-md font-semibold text-primary mb-4 pb-2 border-b border-outline-variant">8. Key Data Sources</h3>
+  <div class="bg-white border border-outline-variant rounded-lg overflow-hidden">
+    <table class="w-full text-left">
+      <thead class="bg-surface-container-low border-b border-outline-variant">
+        <tr>
+          <th class="px-gutter py-3 text-label-sm text-outline">SOURCE</th>
+          <th class="px-gutter py-3 text-label-sm text-outline">WHAT IT PROVIDES</th>
+          <th class="px-gutter py-3 text-label-sm text-outline text-right">LAG</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-outline-variant">
+        {% for source, what, lag in data_sources %}
+        <tr class="hover:bg-surface-container-low transition-colors">
+          <td class="px-gutter py-3 text-label-md font-semibold text-primary">{{ source }}</td>
+          <td class="px-gutter py-3 text-data-tabular text-on-surface-variant">{{ what }}</td>
+          <td class="px-gutter py-3 text-data-tabular text-on-surface-variant text-right">{{ lag }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{% endblock %}

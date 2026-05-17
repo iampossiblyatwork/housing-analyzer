@@ -1,6 +1,7 @@
 from flask import Flask, render_template, request, redirect, url_for, jsonify
 import housing_api
 import alerts as alert_mgr
+import metrics
 
 app = Flask(__name__)
 
@@ -26,21 +27,22 @@ def market():
     except Exception as e:
         return render_template("error.html", message=str(e))
 
-    # Build sorted history lists for charts
     def build_history(section_data, price_key, dom_key="averageDaysOnMarket"):
         history = section_data.get("history", {})
         months = sorted(history.keys())
         return {
-            "labels": months,
-            "prices": [history[m].get(price_key) for m in months],
-            "dom":    [history[m].get(dom_key) for m in months],
+            "labels":   months,
+            "prices":   [history[m].get(price_key) for m in months],
+            "dom":      [history[m].get(dom_key) for m in months],
             "listings": [history[m].get("totalListings") for m in months],
         }
 
     sale_chart = build_history(data.get("saleData", {}), "medianPrice")
     rent_chart = build_history(data.get("rentalData", {}), "medianRent")
 
-    triggered = alert_mgr.check_and_notify(data, zip_code)
+    triggered        = alert_mgr.check_and_notify(data, zip_code)
+    interpretations  = metrics.interpret_market(data)
+    signals          = metrics.detect_composite_signals(sale_chart)
 
     return render_template(
         "market.html",
@@ -50,6 +52,8 @@ def market():
         rent_chart=rent_chart,
         history_range=history_range,
         triggered=triggered,
+        interpretations=interpretations,
+        signals=signals,
     )
 
 
@@ -62,7 +66,7 @@ def property_lookup():
         return render_template("property.html", address=None, data=None)
 
     try:
-        props   = housing_api.get_properties(address=address, limit=1)
+        props    = housing_api.get_properties(address=address, limit=1)
         rent_est = None
         sale_est = None
         try:
@@ -77,12 +81,33 @@ def property_lookup():
         return render_template("error.html", message=str(e))
 
     prop = props[0] if props else None
+
+    # Investor quick-screen using AVM estimates
+    investor_metrics = None
+    if sale_est and rent_est:
+        price        = sale_est.get("price")
+        monthly_rent = rent_est.get("rent")
+        if price and monthly_rent and monthly_rent > 0:
+            annual_rent = monthly_rent * 12
+            grm         = metrics.compute_grm(price, annual_rent)
+            ptr         = round(price / annual_rent, 1)
+            investor_metrics = {
+                "grm":            grm,
+                "grm_interp":     metrics.interpret_grm(grm),
+                "grm_badge":      "success" if grm and grm < 10 else "warning" if grm and grm < 15 else "info" if grm and grm < 20 else "danger",
+                "price_to_rent":  ptr,
+                "ptr_interp":     metrics.interpret_price_to_rent(ptr),
+                "ptr_badge":      "success" if ptr < 15 else "warning" if ptr <= 20 else "info",
+                "note":           metrics.MEDIAN_PRICE_NOTE,
+            }
+
     return render_template(
         "property.html",
         address=address,
         prop=prop,
         rent_est=rent_est,
         sale_est=sale_est,
+        investor_metrics=investor_metrics,
     )
 
 
@@ -108,9 +133,9 @@ def compare():
 
 @app.route("/geofence")
 def geofence():
-    lat    = request.args.get("lat", "").strip()
-    lng    = request.args.get("lng", "").strip()
-    radius = request.args.get("radius", "5").strip()
+    lat       = request.args.get("lat", "").strip()
+    lng       = request.args.get("lng", "").strip()
+    radius    = request.args.get("radius", "5").strip()
     prop_type = request.args.get("propertyType", "")
 
     if not lat or not lng:
@@ -126,6 +151,72 @@ def geofence():
 
     params = {"lat": lat, "lng": lng, "radius": radius, "propertyType": prop_type}
     return render_template("geofence.html", results=results, params=params)
+
+
+# ── Investor Calculator ───────────────────────────────────────────────────────
+
+@app.route("/investor", methods=["GET", "POST"])
+def investor():
+    result = None
+    form   = {}
+
+    if request.method == "POST":
+        try:
+            price         = float(request.form.get("price", 0) or 0)
+            monthly_rent  = float(request.form.get("monthly_rent", 0) or 0)
+            monthly_exp   = float(request.form.get("monthly_expenses", 0) or 0)
+            annual_debt   = float(request.form.get("annual_debt_service", 0) or 0)
+            form = request.form
+
+            if price > 0 and monthly_rent > 0:
+                annual_rent = monthly_rent * 12
+                noi         = metrics.compute_noi(monthly_rent, monthly_exp)
+                grm         = metrics.compute_grm(price, annual_rent)
+                cap         = metrics.compute_cap_rate(noi, price)
+                dscr        = metrics.compute_dscr(noi, annual_debt) if annual_debt else None
+                ptr         = round(price / annual_rent, 1)
+
+                result = {
+                    "price":         price,
+                    "monthly_rent":  monthly_rent,
+                    "monthly_exp":   monthly_exp,
+                    "annual_debt":   annual_debt,
+                    "annual_rent":   annual_rent,
+                    "noi":           noi,
+                    "grm":           grm,
+                    "grm_interp":    metrics.interpret_grm(grm),
+                    "grm_badge":     "success" if grm and grm < 10 else "warning" if grm and grm < 15 else "info" if grm and grm < 20 else "danger",
+                    "cap_rate":      cap,
+                    "cap_interp":    metrics.interpret_cap_rate(cap),
+                    "cap_badge":     "success" if cap and cap >= 8 else "warning" if cap and cap >= 5 else "info" if cap and cap >= 3 else "danger",
+                    "dscr":          dscr,
+                    "dscr_interp":   metrics.interpret_dscr(dscr),
+                    "dscr_badge":    "success" if dscr and dscr >= 1.25 else "warning" if dscr and dscr >= 1.0 else "danger" if dscr else "secondary",
+                    "ptr":           ptr,
+                    "ptr_interp":    metrics.interpret_price_to_rent(ptr),
+                    "ptr_badge":     "success" if ptr < 15 else "warning" if ptr <= 20 else "info",
+                }
+        except (ValueError, ZeroDivisionError):
+            pass
+
+    return render_template("investor.html", result=result, form=form)
+
+
+# ── Metrics Reference ─────────────────────────────────────────────────────────
+
+@app.route("/reference")
+def reference():
+    return render_template(
+        "reference.html",
+        price_indices=metrics.PRICE_INDICES,
+        demand_lead_times=metrics.DEMAND_SIGNAL_LEAD_TIMES,
+        composite_indices=metrics.COMPOSITE_INDICES,
+        economic_drivers=metrics.ECONOMIC_DRIVERS,
+        common_pitfalls=metrics.COMMON_PITFALLS,
+        scope_notes=metrics.SCOPE_NOTES,
+        data_sources=metrics.DATA_SOURCES,
+        analytical_patterns=metrics.ANALYTICAL_PATTERNS,
+    )
 
 
 # ── Alerts ────────────────────────────────────────────────────────────────────

@@ -1,101 +1,110 @@
 {% extends "base.html" %}
 {% block title %}Alerts{% endblock %}
-{% block content %}
+{% block page_title %}SMS Alerts{% endblock %}
 
-<div class="d-flex align-items-center justify-content-between mb-4">
-  <h2 class="fw-bold mb-0"><i class="bi bi-bell text-warning me-2"></i>SMS Alerts</h2>
+{% block content %}
+<div class="mb-stack-lg">
+  <h2 class="text-headline-lg text-primary tracking-tight">SMS Alerts</h2>
+  <p class="text-body-md text-on-surface-variant mt-1">Alerts fire when you run a Market Analysis for the matching ZIP — SMS via Twilio.</p>
 </div>
 
-<div class="row g-4">
+<div class="grid grid-cols-1 lg:grid-cols-5 gap-gutter">
 
-  <!-- New Alert Form -->
-  <div class="col-lg-5">
-    <div class="card shadow-sm">
-      <div class="card-header fw-bold">Create New Alert</div>
-      <div class="card-body">
-        <form action="/alerts" method="post">
-          <div class="mb-3">
-            <label class="form-label">Label</label>
-            <input type="text" class="form-control" name="label" placeholder="e.g. Rent drop in 78244" required>
-          </div>
-          <div class="mb-3">
-            <label class="form-label">Zip Code</label>
-            <input type="text" class="form-control" name="zip_code" placeholder="78244" required>
-          </div>
-          <div class="mb-3">
-            <label class="form-label">Field to Watch</label>
-            <select class="form-select" name="field" required>
-              <option value="median_rent">Median Rent</option>
-              <option value="average_rent">Average Rent</option>
-              <option value="median_price">Median Sale Price</option>
-              <option value="average_price">Average Sale Price</option>
-              <option value="days_on_market">Avg Days on Market (Sale)</option>
-              <option value="rental_dom">Avg Days on Market (Rental)</option>
-              <option value="total_listings">Total Listings</option>
-              <option value="new_listings">New Listings</option>
-            </select>
-          </div>
-          <div class="mb-3">
-            <label class="form-label">Condition</label>
-            <select class="form-select" name="operator" required>
-              <option value="lt">Falls below (&lt;)</option>
-              <option value="gt">Rises above (&gt;)</option>
-              <option value="lte">At or below (&le;)</option>
-              <option value="gte">At or above (&ge;)</option>
-            </select>
-          </div>
-          <div class="mb-3">
-            <label class="form-label">Threshold</label>
-            <input type="number" class="form-control" name="threshold" placeholder="e.g. 1200" required>
-          </div>
-          <button class="btn btn-warning w-100" type="submit">
-            <i class="bi bi-bell-plus me-2"></i>Create Alert
-          </button>
-        </form>
+  <!-- Create form -->
+  <div class="lg:col-span-2 space-y-gutter">
+    <div class="bg-white border border-outline-variant rounded-lg overflow-hidden">
+      <div class="px-stack-md py-3 border-b border-outline-variant bg-surface-container-low">
+        <h3 class="text-label-md font-semibold text-primary">Create New Alert</h3>
       </div>
+      <form action="/alerts" method="post" class="p-stack-md space-y-4">
+        <div>
+          <label class="block text-label-md text-on-surface-variant mb-1.5">Label</label>
+          <input type="text" name="label" placeholder="e.g. Rent drop in 78244" required
+                 class="w-full border border-outline-variant rounded-lg px-3 py-2 text-label-md bg-white focus:outline-none focus:ring-2 focus:ring-secondary/30 placeholder:text-outline">
+        </div>
+        <div>
+          <label class="block text-label-md text-on-surface-variant mb-1.5">ZIP Code</label>
+          <input type="text" name="zip_code" placeholder="78244" required
+                 class="w-full border border-outline-variant rounded-lg px-3 py-2 text-label-md bg-white focus:outline-none focus:ring-2 focus:ring-secondary/30 placeholder:text-outline">
+        </div>
+        <div>
+          <label class="block text-label-md text-on-surface-variant mb-1.5">Field to Watch</label>
+          <select name="field" required
+                  class="w-full border border-outline-variant rounded-lg px-3 py-2 text-label-md bg-white focus:outline-none focus:ring-2 focus:ring-secondary/30">
+            <option value="median_rent">Median Rent</option>
+            <option value="average_rent">Average Rent</option>
+            <option value="median_price">Median Sale Price</option>
+            <option value="average_price">Average Sale Price</option>
+            <option value="days_on_market">Avg Days on Market (Sale)</option>
+            <option value="rental_dom">Avg Days on Market (Rental)</option>
+            <option value="total_listings">Total Listings</option>
+            <option value="new_listings">New Listings</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-label-md text-on-surface-variant mb-1.5">Condition</label>
+          <select name="operator" required
+                  class="w-full border border-outline-variant rounded-lg px-3 py-2 text-label-md bg-white focus:outline-none focus:ring-2 focus:ring-secondary/30">
+            <option value="lt">Falls below (&lt;)</option>
+            <option value="gt">Rises above (&gt;)</option>
+            <option value="lte">At or below (≤)</option>
+            <option value="gte">At or above (≥)</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-label-md text-on-surface-variant mb-1.5">Threshold</label>
+          <input type="number" name="threshold" placeholder="e.g. 1200" required
+                 class="w-full border border-outline-variant rounded-lg px-3 py-2 text-label-md bg-white focus:outline-none focus:ring-2 focus:ring-secondary/30 placeholder:text-outline">
+        </div>
+        <button type="submit" class="w-full py-2.5 bg-secondary text-white text-label-md font-semibold rounded-lg hover:bg-secondary/90 transition-colors">
+          Create Alert
+        </button>
+      </form>
     </div>
 
-    <div class="card shadow-sm mt-3">
-      <div class="card-header fw-bold">How Alerts Work</div>
-      <div class="card-body small text-muted">
-        <p>Alerts are evaluated each time you run a <strong>Market Analysis</strong> for the matching zip code. If the condition is met, an SMS is sent via Twilio.</p>
-        <p class="mb-0">To enable SMS: add your Twilio credentials to <code>.env</code>.</p>
-      </div>
+    <div class="bg-surface-container-low border border-outline-variant rounded-lg p-stack-md text-label-sm text-on-surface-variant space-y-2">
+      <p class="font-semibold text-primary">How alerts work</p>
+      <p>Alerts are evaluated each time you run a <a href="/" class="text-secondary underline">Market Analysis</a> for the matching ZIP code. If the condition is met, an SMS is sent via Twilio.</p>
+      <p>To enable SMS: add <code class="bg-white border border-outline-variant px-1 rounded text-primary">TWILIO_ACCOUNT_SID</code>, <code class="bg-white border border-outline-variant px-1 rounded text-primary">TWILIO_AUTH_TOKEN</code>, <code class="bg-white border border-outline-variant px-1 rounded text-primary">TWILIO_FROM_NUMBER</code>, and <code class="bg-white border border-outline-variant px-1 rounded text-primary">ALERT_TO_NUMBER</code> to your <code class="bg-white border border-outline-variant px-1 rounded text-primary">.env</code> file.</p>
     </div>
   </div>
 
-  <!-- Active Alerts -->
-  <div class="col-lg-7">
-    <div class="card shadow-sm">
-      <div class="card-header fw-bold">Active Alerts ({{ alerts | length }})</div>
+  <!-- Active alerts -->
+  <div class="lg:col-span-3">
+    <div class="bg-white border border-outline-variant rounded-lg overflow-hidden">
+      <div class="px-stack-md py-3 border-b border-outline-variant bg-surface-container-low flex items-center justify-between">
+        <h3 class="text-label-md font-semibold text-primary">Active Alerts</h3>
+        <span class="text-label-sm text-on-surface-variant">{{ alerts | length }} total</span>
+      </div>
       {% if alerts %}
-      <div class="list-group list-group-flush">
+      <div class="divide-y divide-outline-variant">
         {% for a in alerts %}
-        <div class="list-group-item">
-          <div class="d-flex justify-content-between align-items-start">
-            <div>
-              <div class="fw-bold">{{ a.label }}</div>
-              <div class="small text-muted">
-                Zip: <strong>{{ a.zip_code }}</strong> |
-                <code>{{ a.field }} {{ a.operator }} {{ a.threshold }}</code>
-              </div>
-              <div class="small text-muted">
-                Created: {{ a.created[:10] }} |
-                Last triggered: {{ a.last_triggered[:10] if a.last_triggered else 'Never' }}
-              </div>
-            </div>
-            <form action="/alerts/{{ a.id }}/delete" method="post" class="ms-2">
-              <button class="btn btn-sm btn-outline-danger" type="submit"
-                      onclick="return confirm('Delete this alert?')">
-                <i class="bi bi-trash"></i>
-              </button>
-            </form>
+        <div class="flex items-start gap-3 px-stack-md py-3 hover:bg-surface-container-low transition-colors">
+          <span class="material-symbols-outlined filled text-amber-500 shrink-0 mt-0.5" style="font-size:20px">notifications_active</span>
+          <div class="flex-1 min-w-0">
+            <p class="text-label-md font-semibold text-primary">{{ a.label }}</p>
+            <p class="text-label-sm text-on-surface-variant mt-0.5">
+              ZIP <strong>{{ a.zip_code }}</strong> — when <code class="bg-surface-container px-1 rounded">{{ a.field }} {{ a.operator }} {{ a.threshold }}</code>
+            </p>
+            <p class="text-label-sm text-outline mt-0.5">
+              Created {{ a.created[:10] }} · Last triggered: {{ a.last_triggered[:10] if a.last_triggered else 'Never' }}
+            </p>
           </div>
+          <form action="/alerts/{{ a.id }}/delete" method="post"
+                onsubmit="return confirm('Delete this alert?')">
+            <button type="submit"
+                    class="p-1.5 text-on-surface-variant hover:text-error hover:bg-error-container rounded transition-colors">
+              <span class="material-symbols-outlined" style="font-size:18px">delete</span>
+            </button>
+          </form>
         </div>
         {% endfor %}
       </div>
       {% else %}
-      <div class="card-body text-muted">No alerts yet. Create one on the left.</div>
+      <div class="flex flex-col items-center justify-center py-16 text-center px-stack-md">
+        <span class="material-symbols-outlined text-outline mb-3" style="font-size:48px">notifications_off</span>
+        <p class="text-label-md text-on-surface-variant">No alerts yet. Create one to get started.</p>
+      </div>
       {% endif %}
     </div>
   </div>

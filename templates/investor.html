@@ -1,0 +1,192 @@
+{% extends "base.html" %}
+{% block title %}Investor Calculator{% endblock %}
+{% block page_title %}Investor Calculator{% endblock %}
+
+{% macro badge(color, text) %}
+{% if color == "success" %}<span class="inline-flex items-center px-2 py-0.5 rounded-full text-label-sm bg-emerald-50 text-emerald-700 border border-emerald-200">{{ text }}</span>
+{% elif color == "warning" %}<span class="inline-flex items-center px-2 py-0.5 rounded-full text-label-sm bg-amber-50 text-amber-700 border border-amber-200">{{ text }}</span>
+{% elif color == "danger" %}<span class="inline-flex items-center px-2 py-0.5 rounded-full text-label-sm bg-red-50 text-red-700 border border-red-200">{{ text }}</span>
+{% elif color == "info" %}<span class="inline-flex items-center px-2 py-0.5 rounded-full text-label-sm bg-blue-50 text-secondary border border-blue-200">{{ text }}</span>
+{% else %}<span class="inline-flex items-center px-2 py-0.5 rounded-full text-label-sm bg-surface-container text-on-surface-variant border border-outline-variant">{{ text }}</span>
+{% endif %}
+{% endmacro %}
+
+{% block content %}
+<div class="mb-stack-lg">
+  <h2 class="text-headline-lg text-primary tracking-tight">Investor Calculator</h2>
+  <p class="text-body-md text-on-surface-variant mt-1">Compute NOI, cap rate, GRM, and DSCR for an income property.</p>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-5 gap-gutter">
+
+  <!-- Form -->
+  <div class="lg:col-span-2">
+    <div class="bg-white border border-outline-variant rounded-lg overflow-hidden">
+      <div class="px-stack-md py-3 border-b border-outline-variant bg-surface-container-low">
+        <h3 class="text-label-md font-semibold text-primary">Property Inputs</h3>
+      </div>
+      <form action="/investor" method="post" class="p-stack-md space-y-4">
+
+        <div>
+          <label class="block text-label-md text-on-surface-variant mb-1.5">Purchase Price ($)</label>
+          <input type="number" name="price" step="1000" min="0" required
+                 value="{{ form.price if form else '' }}"
+                 placeholder="e.g. 350000"
+                 class="w-full border border-outline-variant rounded-lg px-3 py-2 text-label-md bg-white focus:outline-none focus:ring-2 focus:ring-secondary/30 focus:border-secondary transition-all placeholder:text-outline">
+        </div>
+
+        <div>
+          <label class="block text-label-md text-on-surface-variant mb-1.5">Monthly Gross Rent ($)</label>
+          <input type="number" name="monthly_rent" step="50" min="0" required
+                 value="{{ form.monthly_rent if form else '' }}"
+                 placeholder="e.g. 2200"
+                 class="w-full border border-outline-variant rounded-lg px-3 py-2 text-label-md bg-white focus:outline-none focus:ring-2 focus:ring-secondary/30 focus:border-secondary transition-all placeholder:text-outline">
+        </div>
+
+        <div>
+          <label class="block text-label-md text-on-surface-variant mb-1.5">Monthly Operating Expenses ($)
+            <span class="text-outline font-normal">— taxes, insurance, mgmt, maintenance (no mortgage)</span>
+          </label>
+          <input type="number" name="monthly_expenses" step="50" min="0"
+                 value="{{ form.monthly_expenses if form else '' }}"
+                 placeholder="e.g. 600"
+                 class="w-full border border-outline-variant rounded-lg px-3 py-2 text-label-md bg-white focus:outline-none focus:ring-2 focus:ring-secondary/30 focus:border-secondary transition-all placeholder:text-outline">
+        </div>
+
+        <div>
+          <label class="block text-label-md text-on-surface-variant mb-1.5">Annual Debt Service ($)
+            <span class="text-outline font-normal">— optional, for DSCR</span>
+          </label>
+          <input type="number" name="annual_debt_service" step="100" min="0"
+                 value="{{ form.annual_debt_service if form else '' }}"
+                 placeholder="e.g. 18000"
+                 class="w-full border border-outline-variant rounded-lg px-3 py-2 text-label-md bg-white focus:outline-none focus:ring-2 focus:ring-secondary/30 focus:border-secondary transition-all placeholder:text-outline">
+        </div>
+
+        <button type="submit"
+                class="w-full py-2.5 bg-secondary text-white text-label-md font-semibold rounded-lg hover:bg-secondary/90 transition-colors">
+          Calculate
+        </button>
+      </form>
+    </div>
+
+    <!-- Definitions card -->
+    <div class="mt-gutter bg-white border border-outline-variant rounded-lg overflow-hidden">
+      <div class="px-stack-md py-3 border-b border-outline-variant">
+        <h3 class="text-label-md font-semibold text-primary">Metric Definitions</h3>
+      </div>
+      <div class="divide-y divide-outline-variant">
+        {% for name, desc in [
+          ("NOI", "Annual rent minus operating expenses. Excludes financing and capex. Foundation of cap rate and DSCR."),
+          ("Cap Rate", "NOI ÷ purchase price. Compare to local cap rate trends and the risk-free rate. Cap rate compression = appreciation-dependent return."),
+          ("GRM", "Price ÷ annual gross rent. Faster, dirtier screening metric than cap rate. Useful for first-pass comparison."),
+          ("DSCR", "NOI ÷ annual debt service. Lenders typically require ≥ 1.25× to ensure stability."),
+          ("Price-to-Rent", "Purchase price ÷ annual rent. < 15× = buying cheaper; > 20× = renting more economical."),
+        ] %}
+        <details class="group px-stack-md py-2.5">
+          <summary class="flex justify-between items-center cursor-pointer text-label-md text-on-surface select-none list-none">
+            {{ name }}
+            <span class="material-symbols-outlined text-outline group-open:rotate-180 transition-transform" style="font-size:16px">expand_more</span>
+          </summary>
+          <p class="text-label-sm text-on-surface-variant mt-1.5 leading-relaxed">{{ desc }}</p>
+        </details>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Results -->
+  <div class="lg:col-span-3">
+    {% if result %}
+    <!-- Summary row -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-gutter mb-gutter">
+      <div class="bg-white border border-outline-variant rounded-lg p-stack-md text-center">
+        <p class="text-label-sm text-on-surface-variant mb-1">Annual NOI</p>
+        <p class="text-headline-md font-bold {{ 'text-on-tertiary-container' if result.noi > 0 else 'text-error' }}">${{ "{:,.0f}".format(result.noi) }}</p>
+      </div>
+      <div class="bg-white border border-outline-variant rounded-lg p-stack-md text-center">
+        <p class="text-label-sm text-on-surface-variant mb-1">Cap Rate</p>
+        <p class="text-headline-md font-bold text-primary">{{ "{:.2f}".format(result.cap_rate) if result.cap_rate else '—' }}%</p>
+      </div>
+      <div class="bg-white border border-outline-variant rounded-lg p-stack-md text-center">
+        <p class="text-label-sm text-on-surface-variant mb-1">GRM</p>
+        <p class="text-headline-md font-bold text-primary">{{ result.grm }}×</p>
+      </div>
+      <div class="bg-white border border-outline-variant rounded-lg p-stack-md text-center">
+        <p class="text-label-sm text-on-surface-variant mb-1">DSCR</p>
+        <p class="text-headline-md font-bold text-primary">{{ result.dscr if result.dscr else '—' }}</p>
+      </div>
+    </div>
+
+    <!-- Detailed breakdown -->
+    <div class="bg-white border border-outline-variant rounded-lg overflow-hidden mb-gutter">
+      <div class="px-stack-md py-3 border-b border-outline-variant bg-surface-container-low">
+        <h3 class="text-label-md font-semibold text-primary">Analysis Breakdown</h3>
+      </div>
+      <table class="w-full">
+        <tbody class="divide-y divide-outline-variant">
+
+          <tr class="hover:bg-surface-container-low transition-colors">
+            <td class="px-gutter py-3 text-label-md text-on-surface-variant">Purchase Price</td>
+            <td class="px-gutter py-3 text-label-md font-semibold text-primary text-right">${{ "{:,.0f}".format(result.price) }}</td>
+            <td class="px-gutter py-3 text-right"></td>
+          </tr>
+          <tr class="hover:bg-surface-container-low transition-colors">
+            <td class="px-gutter py-3 text-label-md text-on-surface-variant">Gross Annual Rent</td>
+            <td class="px-gutter py-3 text-label-md font-semibold text-primary text-right">${{ "{:,.0f}".format(result.annual_rent) }}</td>
+            <td class="px-gutter py-3 text-right"></td>
+          </tr>
+          <tr class="hover:bg-surface-container-low transition-colors">
+            <td class="px-gutter py-3 text-label-md text-on-surface-variant">Annual Operating Expenses</td>
+            <td class="px-gutter py-3 text-label-md font-semibold text-error text-right">−${{ "{:,.0f}".format(result.monthly_exp * 12) }}</td>
+            <td class="px-gutter py-3 text-right"></td>
+          </tr>
+          <tr class="bg-surface-container-low">
+            <td class="px-gutter py-3 text-label-md font-semibold text-primary">Net Operating Income (NOI)</td>
+            <td class="px-gutter py-3 text-label-md font-bold {{ 'text-on-tertiary-container' if result.noi > 0 else 'text-error' }} text-right">${{ "{:,.0f}".format(result.noi) }}</td>
+            <td class="px-gutter py-3 text-right"></td>
+          </tr>
+
+          <tr class="hover:bg-surface-container-low transition-colors">
+            <td class="px-gutter py-3 text-label-md text-on-surface-variant">Cap Rate</td>
+            <td class="px-gutter py-3 text-label-md font-semibold text-primary text-right">{{ "{:.2f}".format(result.cap_rate) if result.cap_rate else '—' }}%</td>
+            <td class="px-gutter py-3 text-right">{{ badge(result.cap_badge, result.cap_interp) }}</td>
+          </tr>
+          <tr class="hover:bg-surface-container-low transition-colors">
+            <td class="px-gutter py-3 text-label-md text-on-surface-variant">Gross Rent Multiplier (GRM)</td>
+            <td class="px-gutter py-3 text-label-md font-semibold text-primary text-right">{{ result.grm }}×</td>
+            <td class="px-gutter py-3 text-right">{{ badge(result.grm_badge, result.grm_interp) }}</td>
+          </tr>
+          <tr class="hover:bg-surface-container-low transition-colors">
+            <td class="px-gutter py-3 text-label-md text-on-surface-variant">Price-to-Rent Ratio</td>
+            <td class="px-gutter py-3 text-label-md font-semibold text-primary text-right">{{ result.ptr }}×</td>
+            <td class="px-gutter py-3 text-right">{{ badge(result.ptr_badge, result.ptr_interp) }}</td>
+          </tr>
+          {% if result.dscr is not none %}
+          <tr class="hover:bg-surface-container-low transition-colors">
+            <td class="px-gutter py-3 text-label-md text-on-surface-variant">DSCR (Debt Service Coverage)</td>
+            <td class="px-gutter py-3 text-label-md font-semibold text-primary text-right">{{ result.dscr }}×</td>
+            <td class="px-gutter py-3 text-right">{{ badge(result.dscr_badge, result.dscr_interp) }}</td>
+          </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- NOI caveat -->
+    <div class="flex gap-2 p-stack-md bg-surface-container-low border border-outline-variant rounded-lg text-label-sm text-on-surface-variant">
+      <span class="material-symbols-outlined shrink-0 text-outline" style="font-size:18px">info</span>
+      <p>Cap rate compression signals that price appreciation is outpacing rent growth — a warning sign for new buyers. Compare your cap rate to the local market and the risk-free rate (10-yr Treasury). NOI excludes financing costs and capex.</p>
+    </div>
+
+    {% else %}
+    <!-- Empty state -->
+    <div class="flex flex-col items-center justify-center h-64 bg-white border border-outline-variant rounded-lg text-center p-stack-md">
+      <span class="material-symbols-outlined text-outline mb-3" style="font-size:48px">calculate</span>
+      <p class="text-label-md text-on-surface-variant">Enter property details and click Calculate to see your analysis.</p>
+    </div>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}

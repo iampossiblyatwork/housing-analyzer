@@ -1,99 +1,107 @@
 {% extends "base.html" %}
 {% block title %}Geofence Search{% endblock %}
+{% block page_title %}Geofence Search{% endblock %}
+
 {% block content %}
+<div class="mb-stack-md">
+  <h2 class="text-headline-lg text-primary tracking-tight">Geofence Search</h2>
+  <p class="text-body-md text-on-surface-variant mt-1">Click the map to drop a pin, set a radius, and find all properties in that area.</p>
+</div>
 
-<h2 class="fw-bold mb-2"><i class="bi bi-geo-alt text-danger me-2"></i>Geofence Search</h2>
-<p class="text-muted mb-4">Click the map to drop a pin, adjust the radius, then search. Properties are shown as a heat map and table, grouped by county.</p>
-
-<div class="row g-4">
+<div class="grid grid-cols-1 lg:grid-cols-4 gap-gutter">
 
   <!-- Map -->
-  <div class="col-lg-8">
-    <div id="map" style="height:450px;border-radius:8px;"></div>
+  <div class="lg:col-span-3">
+    <div id="map" class="rounded-lg border border-outline-variant" style="height:460px;"></div>
   </div>
 
   <!-- Controls -->
-  <div class="col-lg-4">
-    <form action="/geofence" method="get" id="geoForm">
-      <div class="mb-3">
-        <label class="form-label fw-bold">Center (click map or enter manually)</label>
-        <input type="number" step="any" class="form-control mb-1" name="lat" id="latInput"
-               value="{{ params.lat or '' }}" placeholder="Latitude" required>
-        <input type="number" step="any" class="form-control" name="lng" id="lngInput"
-               value="{{ params.lng or '' }}" placeholder="Longitude" required>
+  <div class="lg:col-span-1">
+    <div class="bg-white border border-outline-variant rounded-lg overflow-hidden">
+      <div class="px-stack-md py-3 border-b border-outline-variant bg-surface-container-low">
+        <h3 class="text-label-md font-semibold text-primary">Search Controls</h3>
       </div>
-      <div class="mb-3">
-        <label class="form-label fw-bold">Radius (miles): <span id="radiusLabel">{{ params.radius or 5 }}</span></label>
-        <input type="range" class="form-range" name="radius" id="radiusSlider"
-               min="1" max="50" value="{{ params.radius or 5 }}"
-               oninput="document.getElementById('radiusLabel').textContent=this.value; updateCircle();">
-      </div>
-      <div class="mb-3">
-        <label class="form-label fw-bold">Property Type</label>
-        <select class="form-select" name="propertyType">
-          <option value="">All Types</option>
-          <option value="Single Family" {% if params.propertyType=='Single Family' %}selected{% endif %}>Single Family</option>
-          <option value="Condo"         {% if params.propertyType=='Condo' %}selected{% endif %}>Condo</option>
-          <option value="Townhouse"     {% if params.propertyType=='Townhouse' %}selected{% endif %}>Townhouse</option>
-          <option value="Multi-Family"  {% if params.propertyType=='Multi-Family' %}selected{% endif %}>Multi-Family</option>
-          <option value="Apartment"     {% if params.propertyType=='Apartment' %}selected{% endif %}>Apartment</option>
-        </select>
-      </div>
-      <button class="btn btn-danger w-100" type="submit">Search Area</button>
-    </form>
+      <form action="/geofence" method="get" id="geoForm" class="p-stack-md space-y-4">
+        <div>
+          <label class="block text-label-md text-on-surface-variant mb-1.5">Center (click map or enter manually)</label>
+          <input type="number" step="any" name="lat" id="latInput" value="{{ params.lat or '' }}" placeholder="Latitude" required
+                 class="w-full border border-outline-variant rounded-lg px-3 py-2 text-label-md bg-white focus:outline-none focus:ring-2 focus:ring-secondary/30 mb-2 placeholder:text-outline">
+          <input type="number" step="any" name="lng" id="lngInput" value="{{ params.lng or '' }}" placeholder="Longitude" required
+                 class="w-full border border-outline-variant rounded-lg px-3 py-2 text-label-md bg-white focus:outline-none focus:ring-2 focus:ring-secondary/30 placeholder:text-outline">
+        </div>
+        <div>
+          <label class="block text-label-md text-on-surface-variant mb-1.5">
+            Radius: <span id="radiusLabel" class="text-secondary font-semibold">{{ params.radius or 5 }}</span> miles
+          </label>
+          <input type="range" name="radius" id="radiusSlider" min="1" max="50" value="{{ params.radius or 5 }}"
+                 oninput="document.getElementById('radiusLabel').textContent=this.value; updateCircle();"
+                 class="w-full accent-secondary">
+        </div>
+        <div>
+          <label class="block text-label-md text-on-surface-variant mb-1.5">Property Type</label>
+          <select name="propertyType"
+                  class="w-full border border-outline-variant rounded-lg px-3 py-2 text-label-md bg-white focus:outline-none focus:ring-2 focus:ring-secondary/30">
+            <option value="">All Types</option>
+            <option value="Single Family" {{ 'selected' if params.propertyType=='Single Family' }}>Single Family</option>
+            <option value="Condo"         {{ 'selected' if params.propertyType=='Condo' }}>Condo</option>
+            <option value="Townhouse"     {{ 'selected' if params.propertyType=='Townhouse' }}>Townhouse</option>
+            <option value="Multi-Family"  {{ 'selected' if params.propertyType=='Multi-Family' }}>Multi-Family</option>
+            <option value="Apartment"     {{ 'selected' if params.propertyType=='Apartment' }}>Apartment</option>
+          </select>
+        </div>
+        <button type="submit" class="w-full py-2.5 bg-secondary text-white text-label-md font-semibold rounded-lg hover:bg-secondary/90 transition-colors">
+          Search Area
+        </button>
+      </form>
+    </div>
   </div>
 </div>
 
 {% if results %}
-<div class="mt-4">
-  <h5 class="fw-bold">{{ results | length }} properties found</h5>
-
-  <!-- County Summary -->
-  {% set county_map = {} %}
-  {% for p in results %}
-    {% set county = p.get('county', 'Unknown') %}
-    {% if county not in county_map %}{% set _ = county_map.update({county: []}) %}{% endif %}
-    {% set _ = county_map[county].append(p) %}
-  {% endfor %}
-
-  <div class="mb-3">
-    <strong>By County:</strong>
-    {% for county, props in county_map.items() %}
-    <span class="badge bg-secondary me-1">{{ county }}: {{ props|length }}</span>
-    {% endfor %}
+<div class="mt-stack-lg">
+  <div class="flex items-center gap-3 mb-4">
+    <h3 class="text-label-md font-semibold text-primary">{{ results | length }} properties found</h3>
+    <div class="flex flex-wrap gap-2">
+      {% set county_counts = {} %}
+      {% for p in results %}{% set c = p.get('county','Unknown') %}{% if c not in county_counts %}{% set _ = county_counts.update({c: 0}) %}{% endif %}{% set _ = county_counts.update({c: county_counts[c]+1}) %}{% endfor %}
+      {% for county, count in county_counts.items() %}
+      <span class="px-2 py-0.5 text-label-sm bg-surface-container border border-outline-variant rounded-full text-on-surface-variant">{{ county }}: {{ count }}</span>
+      {% endfor %}
+    </div>
   </div>
 
-  <div class="table-responsive">
-    <table class="table table-hover table-sm">
-      <thead class="table-dark">
-        <tr>
-          <th>Address</th>
-          <th>County</th>
-          <th>Type</th>
-          <th>Beds/Baths</th>
-          <th>Sq Ft</th>
-          <th>Last Sale Price</th>
-          <th>Year Built</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for p in results %}
-        <tr>
-          <td>{{ p.get('formattedAddress', '—') }}</td>
-          <td>{{ p.get('county', '—') }}</td>
-          <td>{{ p.get('propertyType', '—') }}</td>
-          <td>{{ p.get('bedrooms', '—') }} / {{ p.get('bathrooms', '—') }}</td>
-          <td>{{ "{:,}".format(p.get('squareFootage')) if p.get('squareFootage') else '—' }}</td>
-          <td>{{ "${:,.0f}".format(p.get('lastSalePrice')) if p.get('lastSalePrice') else '—' }}</td>
-          <td>{{ p.get('yearBuilt', '—') }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+  <div class="bg-white border border-outline-variant rounded-lg overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="w-full text-left">
+        <thead class="bg-surface-container-low border-b border-outline-variant">
+          <tr>
+            <th class="px-gutter py-3 text-label-sm text-outline">ADDRESS</th>
+            <th class="px-gutter py-3 text-label-sm text-outline">COUNTY</th>
+            <th class="px-gutter py-3 text-label-sm text-outline">TYPE</th>
+            <th class="px-gutter py-3 text-label-sm text-outline">BD/BA</th>
+            <th class="px-gutter py-3 text-label-sm text-outline text-right">SQ FT</th>
+            <th class="px-gutter py-3 text-label-sm text-outline text-right">LAST SALE</th>
+            <th class="px-gutter py-3 text-label-sm text-outline text-right">BUILT</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-outline-variant">
+          {% for p in results %}
+          <tr class="hover:bg-surface-container-low transition-colors">
+            <td class="px-gutter py-2.5 text-label-md text-on-surface max-w-xs truncate">{{ p.get('formattedAddress','—') }}</td>
+            <td class="px-gutter py-2.5 text-data-tabular text-on-surface-variant">{{ p.get('county','—') }}</td>
+            <td class="px-gutter py-2.5 text-data-tabular text-on-surface-variant">{{ p.get('propertyType','—') }}</td>
+            <td class="px-gutter py-2.5 text-data-tabular text-on-surface-variant">{{ p.get('bedrooms','—') }}/{{ p.get('bathrooms','—') }}</td>
+            <td class="px-gutter py-2.5 text-data-tabular text-on-surface-variant text-right">{{ "{:,}".format(p.get('squareFootage')) if p.get('squareFootage') else '—' }}</td>
+            <td class="px-gutter py-2.5 text-data-tabular text-on-surface-variant text-right">{{ "${:,.0f}".format(p.get('lastSalePrice')) if p.get('lastSalePrice') else '—' }}</td>
+            <td class="px-gutter py-2.5 text-data-tabular text-on-surface-variant text-right">{{ p.get('yearBuilt','—') }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
   </div>
 </div>
 {% endif %}
-
 {% endblock %}
 
 {% block scripts %}
@@ -106,14 +114,13 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   attribution: '© OpenStreetMap contributors'
 }).addTo(map);
 
-let marker = null;
-let circle = null;
+let marker = null, circle = null;
 
 {% if params.lat and params.lng %}
 marker = L.marker([{{ params.lat }}, {{ params.lng }}]).addTo(map);
 circle = L.circle([{{ params.lat }}, {{ params.lng }}], {
   radius: {{ (params.radius | float) * 1609.34 }},
-  color: '#dc3545', fillColor: '#dc354522', fillOpacity: 0.3
+  color: '#3755c3', fillColor: '#3755c322', fillOpacity: 0.3
 }).addTo(map);
 {% endif %}
 
@@ -132,22 +139,17 @@ function updateCircle() {
   if (isNaN(lat) || isNaN(lng)) return;
   if (circle) map.removeLayer(circle);
   circle = L.circle([lat, lng], {
-    radius: r, color: '#dc3545', fillColor: '#dc354522', fillOpacity: 0.3
+    radius: r, color: '#3755c3', fillColor: '#3755c322', fillOpacity: 0.3
   }).addTo(map);
 }
 
 {% if results %}
-// Heat map layer
 const heatPoints = [
-  {% for p in results %}
-  {% if p.get('latitude') and p.get('longitude') %}
+  {% for p in results %}{% if p.get('latitude') and p.get('longitude') %}
   [{{ p.latitude }}, {{ p.longitude }}, {{ (p.get('lastSalePrice') or 200000) / 500000 }}],
-  {% endif %}
-  {% endfor %}
+  {% endif %}{% endfor %}
 ];
-if (heatPoints.length > 0) {
-  L.heatLayer(heatPoints, { radius: 25, blur: 20, maxZoom: 17 }).addTo(map);
-}
+if (heatPoints.length > 0) L.heatLayer(heatPoints, { radius: 25, blur: 20, maxZoom: 17 }).addTo(map);
 {% endif %}
 </script>
 {% endblock %}

@@ -1,99 +1,144 @@
 {% extends "base.html" %}
 {% block title %}Property Lookup{% endblock %}
+{% block page_title %}Property Lookup{% endblock %}
+
+{% macro badge(color, text) %}
+{% if color == "success" %}<span class="inline-flex items-center px-2 py-0.5 rounded-full text-label-sm bg-emerald-50 text-emerald-700 border border-emerald-200">{{ text }}</span>
+{% elif color == "warning" %}<span class="inline-flex items-center px-2 py-0.5 rounded-full text-label-sm bg-amber-50 text-amber-700 border border-amber-200">{{ text }}</span>
+{% elif color == "danger" %}<span class="inline-flex items-center px-2 py-0.5 rounded-full text-label-sm bg-red-50 text-red-700 border border-red-200">{{ text }}</span>
+{% elif color == "info" %}<span class="inline-flex items-center px-2 py-0.5 rounded-full text-label-sm bg-blue-50 text-secondary border border-blue-200">{{ text }}</span>
+{% else %}<span class="inline-flex items-center px-2 py-0.5 rounded-full text-label-sm bg-surface-container text-on-surface-variant border border-outline-variant">{{ text }}</span>
+{% endif %}
+{% endmacro %}
+
 {% block content %}
 
-<h2 class="fw-bold mb-4"><i class="bi bi-house-check text-success me-2"></i>Property Lookup</h2>
-
-<form action="/property" method="get" class="mb-4">
-  <div class="input-group" style="max-width:600px">
-    <input type="text" class="form-control" name="address"
-           value="{{ address or '' }}" placeholder="123 Main St, San Antonio, TX 78244" required>
-    <button class="btn btn-success" type="submit">Look Up</button>
+<form action="/property" method="get" class="mb-stack-lg">
+  <div class="flex gap-2 max-w-xl">
+    <input type="text" name="address" value="{{ address or '' }}" placeholder="123 Main St, San Antonio, TX 78244" required
+           class="flex-1 border border-outline-variant rounded-lg px-3 py-2 text-label-md bg-white focus:outline-none focus:ring-2 focus:ring-secondary/30 placeholder:text-outline">
+    <button type="submit" class="px-4 py-2 bg-secondary text-white text-label-md font-medium rounded-lg hover:bg-secondary/90 transition-colors">
+      Look Up
+    </button>
   </div>
 </form>
 
 {% if address and not prop %}
-<div class="alert alert-warning">No property found for "{{ address }}".</div>
+<div class="flex items-center gap-3 p-stack-md bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-label-md">
+  <span class="material-symbols-outlined text-amber-500" style="font-size:20px">warning</span>
+  No property found for "{{ address }}".
+</div>
 {% endif %}
 
 {% if prop %}
-<div class="row g-4">
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-gutter">
 
   <!-- Property Details -->
-  <div class="col-lg-6">
-    <div class="card shadow-sm h-100">
-      <div class="card-header fw-bold"><i class="bi bi-info-circle me-2"></i>Property Details</div>
-      <div class="card-body">
-        <table class="table table-sm mb-0">
-          <tbody>
-            <tr><th>Address</th><td>{{ prop.get('formattedAddress', address) }}</td></tr>
-            <tr><th>Type</th><td>{{ prop.get('propertyType', '—') }}</td></tr>
-            <tr><th>Beds / Baths</th><td>{{ prop.get('bedrooms', '—') }} bd / {{ prop.get('bathrooms', '—') }} ba</td></tr>
-            <tr><th>Sq Ft</th><td>{{ "{:,}".format(prop.get('squareFootage')) if prop.get('squareFootage') else '—' }}</td></tr>
-            <tr><th>Year Built</th><td>{{ prop.get('yearBuilt', '—') }}</td></tr>
-            <tr><th>Lot Size</th><td>{{ "{:,}".format(prop.get('lotSize')) if prop.get('lotSize') else '—' }} sqft</td></tr>
-            <tr><th>County</th><td>{{ prop.get('county', '—') }}</td></tr>
-            <tr><th>Last Sale</th><td>{{ prop.get('lastSaleDate', '—') }}</td></tr>
-            <tr><th>Last Sale Price</th><td>{{ "${:,.0f}".format(prop.get('lastSalePrice')) if prop.get('lastSalePrice') else '—' }}</td></tr>
-          </tbody>
-        </table>
-      </div>
+  <div class="bg-white border border-outline-variant rounded-lg overflow-hidden">
+    <div class="px-stack-md py-3 border-b border-outline-variant bg-surface-container-low flex items-center gap-2">
+      <span class="material-symbols-outlined text-on-surface-variant" style="font-size:18px">info</span>
+      <h3 class="text-label-md font-semibold text-primary">Property Details</h3>
     </div>
+    <table class="w-full">
+      <tbody class="divide-y divide-outline-variant">
+        {% set rows = [
+          ("Address",        prop.get('formattedAddress', address)),
+          ("Type",           prop.get('propertyType', '—')),
+          ("Beds / Baths",   (prop.get('bedrooms', '—')|string) + " bd / " + (prop.get('bathrooms', '—')|string) + " ba"),
+          ("Sq Ft",          "{:,}".format(prop.get('squareFootage')) if prop.get('squareFootage') else '—'),
+          ("Year Built",     prop.get('yearBuilt', '—')),
+          ("Lot Size",       "{:,} sqft".format(prop.get('lotSize')) if prop.get('lotSize') else '—'),
+          ("County",         prop.get('county', '—')),
+          ("Last Sale Date", prop.get('lastSaleDate', '—')),
+          ("Last Sale Price","${:,.0f}".format(prop.get('lastSalePrice')) if prop.get('lastSalePrice') else '—'),
+        ] %}
+        {% for label, val in rows %}
+        <tr class="hover:bg-surface-container-low transition-colors">
+          <td class="px-gutter py-2.5 text-label-sm text-on-surface-variant w-40">{{ label }}</td>
+          <td class="px-gutter py-2.5 text-label-md text-primary font-medium">{{ val }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
   </div>
 
-  <!-- Estimates -->
-  <div class="col-lg-6">
-    <div class="row g-3">
+  <!-- Estimates + Investor -->
+  <div class="space-y-gutter">
 
-      {% if rent_est %}
-      <div class="col-12">
-        <div class="card shadow-sm border-success">
-          <div class="card-header fw-bold text-success"><i class="bi bi-cash-stack me-2"></i>Rent Estimate</div>
-          <div class="card-body">
-            <div class="row text-center">
-              <div class="col-4">
-                <div class="fs-5 fw-bold text-success">${{ "{:,.0f}".format(rent_est.get('rentRangeLow', 0)) }}</div>
-                <div class="small text-muted">Low</div>
-              </div>
-              <div class="col-4">
-                <div class="fs-4 fw-bold text-success">${{ "{:,.0f}".format(rent_est.get('rent', 0)) }}</div>
-                <div class="small text-muted">Estimate</div>
-              </div>
-              <div class="col-4">
-                <div class="fs-5 fw-bold text-success">${{ "{:,.0f}".format(rent_est.get('rentRangeHigh', 0)) }}</div>
-                <div class="small text-muted">High</div>
-              </div>
-            </div>
-          </div>
+    {% if rent_est %}
+    <div class="bg-white border border-outline-variant rounded-lg overflow-hidden">
+      <div class="px-stack-md py-3 border-b border-outline-variant flex items-center gap-2">
+        <span class="material-symbols-outlined text-on-tertiary-container filled" style="font-size:18px">payments</span>
+        <h3 class="text-label-md font-semibold text-on-tertiary-container">Rent Estimate</h3>
+      </div>
+      <div class="grid grid-cols-3 divide-x divide-outline-variant p-stack-md">
+        <div class="text-center px-4">
+          <p class="text-data-tabular text-on-surface-variant mb-1">Low</p>
+          <p class="text-headline-md font-bold text-primary">${{ "{:,.0f}".format(rent_est.get('rentRangeLow', 0)) }}</p>
+        </div>
+        <div class="text-center px-4">
+          <p class="text-label-sm text-on-surface-variant mb-1">Estimate</p>
+          <p class="text-display-lg font-bold text-on-tertiary-container leading-none">${{ "{:,.0f}".format(rent_est.get('rent', 0)) }}</p>
+          <p class="text-label-sm text-outline mt-1">/ month</p>
+        </div>
+        <div class="text-center px-4">
+          <p class="text-data-tabular text-on-surface-variant mb-1">High</p>
+          <p class="text-headline-md font-bold text-primary">${{ "{:,.0f}".format(rent_est.get('rentRangeHigh', 0)) }}</p>
         </div>
       </div>
-      {% endif %}
-
-      {% if sale_est %}
-      <div class="col-12">
-        <div class="card shadow-sm border-primary">
-          <div class="card-header fw-bold text-primary"><i class="bi bi-tag me-2"></i>Sale Value Estimate</div>
-          <div class="card-body">
-            <div class="row text-center">
-              <div class="col-4">
-                <div class="fs-5 fw-bold text-primary">${{ "{:,.0f}".format(sale_est.get('priceRangeLow', 0)) }}</div>
-                <div class="small text-muted">Low</div>
-              </div>
-              <div class="col-4">
-                <div class="fs-4 fw-bold text-primary">${{ "{:,.0f}".format(sale_est.get('price', 0)) }}</div>
-                <div class="small text-muted">Estimate</div>
-              </div>
-              <div class="col-4">
-                <div class="fs-5 fw-bold text-primary">${{ "{:,.0f}".format(sale_est.get('priceRangeHigh', 0)) }}</div>
-                <div class="small text-muted">High</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-      {% endif %}
-
     </div>
+    {% endif %}
+
+    {% if sale_est %}
+    <div class="bg-white border border-outline-variant rounded-lg overflow-hidden">
+      <div class="px-stack-md py-3 border-b border-outline-variant flex items-center gap-2">
+        <span class="material-symbols-outlined text-secondary filled" style="font-size:18px">sell</span>
+        <h3 class="text-label-md font-semibold text-secondary">Sale Value Estimate</h3>
+      </div>
+      <div class="grid grid-cols-3 divide-x divide-outline-variant p-stack-md">
+        <div class="text-center px-4">
+          <p class="text-data-tabular text-on-surface-variant mb-1">Low</p>
+          <p class="text-headline-md font-bold text-primary">${{ "{:,.0f}".format(sale_est.get('priceRangeLow', 0)) }}</p>
+        </div>
+        <div class="text-center px-4">
+          <p class="text-label-sm text-on-surface-variant mb-1">Estimate</p>
+          <p class="text-display-lg font-bold text-secondary leading-none">${{ "{:,.0f}".format(sale_est.get('price', 0)) }}</p>
+        </div>
+        <div class="text-center px-4">
+          <p class="text-data-tabular text-on-surface-variant mb-1">High</p>
+          <p class="text-headline-md font-bold text-primary">${{ "{:,.0f}".format(sale_est.get('priceRangeHigh', 0)) }}</p>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    {% if investor_metrics %}
+    <div class="bg-white border border-outline-variant rounded-lg overflow-hidden">
+      <div class="px-stack-md py-3 border-b border-outline-variant flex items-center gap-2">
+        <span class="material-symbols-outlined text-amber-600 filled" style="font-size:18px">trending_up</span>
+        <h3 class="text-label-md font-semibold text-primary">Investor Quick Screen</h3>
+        <span class="ml-auto text-label-sm text-outline">Based on AVM estimates</span>
+      </div>
+      <div class="grid grid-cols-2 divide-x divide-outline-variant">
+        <div class="p-stack-md">
+          <p class="text-label-sm text-on-surface-variant mb-1">Gross Rent Multiplier</p>
+          <p class="text-headline-md font-bold text-primary mb-2">{{ investor_metrics.grm }}×</p>
+          {{ badge(investor_metrics.grm_badge, investor_metrics.grm_interp) }}
+        </div>
+        <div class="p-stack-md">
+          <p class="text-label-sm text-on-surface-variant mb-1">Price-to-Rent Ratio</p>
+          <p class="text-headline-md font-bold text-primary mb-2">{{ investor_metrics.price_to_rent }}×</p>
+          {{ badge(investor_metrics.ptr_badge, investor_metrics.ptr_interp) }}
+        </div>
+      </div>
+      <div class="px-stack-md pb-stack-md">
+        <a href="/investor" class="text-label-sm text-secondary hover:underline">
+          Run full investor analysis →
+        </a>
+      </div>
+    </div>
+    {% endif %}
+
   </div>
 </div>
 {% endif %}
