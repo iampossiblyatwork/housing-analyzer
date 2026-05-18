@@ -132,6 +132,7 @@
 let allData     = [];     // raw API response
 let heatData    = [];     // filtered {lat, lng, value, raw} for the current metric
 let heatLayer   = null;   // L.geoJSON of the interpolated cells
+let hullLayer   = null;   // L.geoJSON dashed outline of dataHull — shows the user where the field's authority ends
 let markerGroup = null;   // L.layerGroup of property CircleMarkers
 let dataHull    = null;   // turf Feature<Polygon> — buffered convex hull of loaded points
 let hullBbox    = null;   // [w, s, e, n] derived from dataHull (anchors the IDW grid)
@@ -282,7 +283,10 @@ async function fetchAndRender() {
     );
     const hull = turf.convex(fc);
     if (hull) {
-      dataHull = turf.buffer(hull, 1.5, { units: 'kilometers' });
+      // 3 km buffer (was 1.5 km) — gives the IDW field a more generous halo
+      // around the outer markers so the rendered overlay reads as a coherent
+      // region instead of a stamp glued to the data points.
+      dataHull = turf.buffer(hull, 3, { units: 'kilometers' });
       hullBbox = turf.bbox(dataHull);
     } else {
       console.warn('heatmap: turf.convex returned null (<3 unique points or collinear) — falling back to viewport bbox');
@@ -400,6 +404,24 @@ function renderHeat() {
     interactive: false,
   }).addTo(map);
 
+  // Faint dashed outline of the buffered hull so the user can see where the
+  // IDW field's authority actually ends — kills the "the heatmap is in the
+  // wrong place" misread when the hull is smaller than the viewport.
+  if (hullLayer) map.removeLayer(hullLayer);
+  if (dataHull) {
+    hullLayer = L.geoJSON(dataHull, {
+      pane: 'heatPane',
+      style: {
+        color:       '#0b1c30',
+        weight:      1,
+        opacity:     0.4,
+        dashArray:   '4 4',
+        fill:        false,
+      },
+      interactive: false,
+    }).addTo(map);
+  }
+
   showLegend(minV, maxV, heatData.length);
 }
 
@@ -455,6 +477,7 @@ function escapeHtml(s) {
 // ── Layer cleanup ─────────────────────────────────────────────────────────────
 function clearLayers() {
   if (heatLayer)   { map.removeLayer(heatLayer);   heatLayer = null; }
+  if (hullLayer)   { map.removeLayer(hullLayer);   hullLayer = null; }
   if (markerGroup) { map.removeLayer(markerGroup); markerGroup = null; }
   heatData = [];
   dataHull = null;
