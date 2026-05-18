@@ -18,6 +18,7 @@ metric-driven heatmap, investor calculator, metrics reference, and SMS alerts vi
 **Macro data:** `fred_api.py` — FRED API client (optional, graceful fallback)
 **Demographics:** `census_api.py` — Census ACS client (optional, graceful fallback)
 **Cache:** `cache.py` — file-based TTL cache, `.cache/` dir (gitignored)
+**Dev fixture store:** `dev_cache.py` — SQLite-backed; when `DEV_MODE=1`, decorated API wrappers consult it first and write back on miss. `dev_cache.sqlite` is committed so devs can work offline against captured responses.
 **Alert engine:** `alerts.py` — JSON-file-backed alert store with Twilio SMS delivery
 **Metrics layer:** `metrics.py` — full structured encoding of the PDF reference document
 
@@ -54,6 +55,23 @@ Simple JSON cache in `.cache/` at project root (gitignored). Cache key = MD5 of
 (namespace, params). TTL: 24 hours for FRED, 7 days for Census. No Redis, no
 database — keeps the stack flat. If cache is stale or corrupt, falls through to live
 API call transparently.
+
+### Dev fixture store (`dev_cache.py`, SQLite, committed)
+Separate from the runtime TTL cache. When `DEV_MODE=1` is set, the
+`@dev_cache.fixture(namespace)` decorator on each API wrapper checks
+`dev_cache.sqlite` first; on miss it falls through to the live API and writes
+the response back. The DB is checked into git so devs can iterate against a
+captured snapshot of real responses without burning quota.
+
+Populate it by running `DEV_MODE=1 python record_fixtures.py 78244 90210 ...`
+with real keys in `.env`, then commit the updated `dev_cache.sqlite`.
+
+In dev mode, `fred_api.is_configured()` and `census_api.is_configured()`
+return True even without an API key, so template "configure this" branches
+yield to the data branches (which read from the fixture).
+
+This is NOT a TTL cache. Entries don't expire — it's a frozen snapshot. The
+runtime TTL cache (`cache.py`) still applies on top in production.
 
 ### Alerts stored as flat JSON (`alerts.json`)
 No database. Alerts are a list of dicts serialized to `alerts.json` at the project

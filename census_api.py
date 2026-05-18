@@ -6,6 +6,7 @@ Set CENSUS_API_KEY in .env. Returns None if unconfigured.
 import os, requests
 from dotenv import load_dotenv
 import cache
+import dev_cache
 
 load_dotenv()
 
@@ -21,6 +22,9 @@ _VARS = {
 
 
 def get_zip_demographics(zip_code):
+    fixture = dev_cache.get("census", {"zip": zip_code})
+    if fixture is not None:
+        return fixture
     if not _KEY:
         return None
     cached = cache.get("census", {"zip": zip_code}, ttl=604800)  # 7 days
@@ -50,10 +54,11 @@ def get_zip_demographics(zip_code):
         if hu and vu is not None and hu > 0:
             data["vacancy_rate"] = round(vu / hu * 100, 1)
         cache.put("census", {"zip": zip_code}, data)
+        dev_cache.put("census", {"zip": zip_code}, data)
         return data
     except Exception:
         return None
 
 
 def is_configured():
-    return bool(_KEY)
+    return bool(_KEY) or dev_cache.is_active()
