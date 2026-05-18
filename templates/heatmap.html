@@ -81,18 +81,20 @@
     <div id="map" class="absolute inset-0"></div>
 
     <!-- Legend -->
-    <div id="legend" class="absolute bottom-4 left-4 z-[500] bg-white/95 backdrop-blur-sm border border-outline-variant rounded-lg p-3 hidden shadow-card" style="min-width:220px">
+    <div id="legend" class="absolute bottom-4 left-4 z-[500] bg-white/95 backdrop-blur-sm border border-outline-variant rounded-lg p-3 hidden shadow-card" style="min-width:240px;max-width:calc(100vw - 2rem)">
       <div class="flex justify-between items-baseline mb-2">
         <p id="legendMetric" class="text-label-sm font-semibold text-primary">Sale Price</p>
         <p id="legendCount" class="text-label-sm text-on-surface-variant">— listings</p>
       </div>
       <div class="h-3 rounded-full mb-1.5" style="background: linear-gradient(to right, #10b981, #f59e0b, #ef4444);"></div>
       <div class="flex justify-between text-label-sm text-on-surface-variant">
-        <span id="legendMin">—</span>
-        <span class="text-outline">low → high</span>
-        <span id="legendMax">—</span>
+        <span id="legendP5">—</span>
+        <span class="text-outline">p5 → p95</span>
+        <span id="legendP95">—</span>
       </div>
-      <p id="legendScaleNote" class="text-label-sm text-on-surface-variant mt-1">scale: p5 – p95</p>
+      <p class="text-label-sm text-on-surface-variant mt-1">
+        Data range: <span id="legendMin" class="font-medium">—</span> – <span id="legendMax" class="font-medium">—</span>
+      </p>
     </div>
 
     <!-- Loading overlay -->
@@ -232,6 +234,32 @@ function buildHeatData(metric) {
     .map(p => ({ lat: p.lat, lng: p.lng, value: p[metric], raw: p }));
 }
 
+// Recompute the data hull from the current heatData. Must be called whenever
+// heatData changes (initial load, metric switch) so the rendered field's
+// boundary matches the points actually being interpolated.
+function recomputeHull() {
+  if (heatData.length === 0) {
+    dataHull = null;
+    hullBbox = null;
+    return;
+  }
+  const fc = turf.featureCollection(
+    heatData.map(p => turf.point([p.lng, p.lat], { v: p.value }))
+  );
+  const hull = turf.convex(fc);
+  if (hull) {
+    dataHull = turf.buffer(hull, 3, { units: 'kilometers' });
+    hullBbox = turf.bbox(dataHull);
+  } else {
+    // <3 unique points or all-collinear — fall back to viewport bbox so a
+    // sparse metric still renders something.
+    console.warn('heatmap: turf.convex returned null — falling back to viewport bbox');
+    const b = map.getBounds();
+    dataHull = null;
+    hullBbox = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
+  }
+}
+
 // ── Fetch — uses the current map field of view ────────────────────────────────
 async function fetchAndRender() {
   // RentCast's geofence is circular. Compute the smallest circle that covers
@@ -273,27 +301,9 @@ async function fetchAndRender() {
       return;
     }
 
-    // Anchor the IDW grid to the convex hull of the loaded data (buffered
-    // ~1.5km), not the viewport bbox — otherwise panning leaves a "giant
-    // green bar" stretched across unrelated rectangle. turf.convex returns
-    // null for <3 unique points or all-collinear input; in that edge case we
-    // fall back to the viewport bbox so a single property still renders.
-    const fc = turf.featureCollection(
-      heatData.map(p => turf.point([p.lng, p.lat], { v: p.value }))
-    );
-    const hull = turf.convex(fc);
-    if (hull) {
-      // 3 km buffer (was 1.5 km) — gives the IDW field a more generous halo
-      // around the outer markers so the rendered overlay reads as a coherent
-      // region instead of a stamp glued to the data points.
-      dataHull = turf.buffer(hull, 3, { units: 'kilometers' });
-      hullBbox = turf.bbox(dataHull);
-    } else {
-      console.warn('heatmap: turf.convex returned null (<3 unique points or collinear) — falling back to viewport bbox');
-      const b = map.getBounds();
-      dataHull = null;
-      hullBbox = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
-    }
+    // Anchor the IDW grid to the convex hull of the loaded data — see
+    // recomputeHull() for details. Must be redone on metric switch too.
+    recomputeHull();
 
     // Surface the computed bbox so any residual position/scale weirdness is
     // diagnosable from devtools without another code change. The "diameter"
@@ -349,6 +359,10 @@ function onMetricChange() {
     return;
   }
   heatData = next;
+  // Each metric has its own valid-point set (DOM in particular is sparse) —
+  // recompute the hull so the boundary and the field both reflect the data
+  // actually present for the new metric.
+  recomputeHull();
   renderHeat();
   renderMarkers();
 }
@@ -385,11 +399,25 @@ function renderHeat() {
     bbox:     hullBbox,
   });
 
+  // Clip the grid to the buffered hull. turf.interpolate fills the full bbox,
+  // so hexagons in the corners outside the hull would otherwise render fake
+  // extrapolated values from far-away points. Keep only cells whose centroid
+  // lies inside dataHull. (When dataHull is null — <3 unique points — we
+  // skip clipping and render the full bbox as a fallback.)
+  const clipped = dataHull
+    ? {
+        type: 'FeatureCollection',
+        features: grid.features.filter(f =>
+          turf.booleanPointInPolygon(turf.centroid(f), dataHull)
+        ),
+      }
+    : grid;
+
   if (heatLayer) map.removeLayer(heatLayer);
 
   const opacity = parseInt(document.getElementById('opacitySlider').value) / 100;
 
-  heatLayer = L.geoJSON(grid, {
+  heatLayer = L.geoJSON(clipped, {
     pane: 'heatPane',
     style: feature => {
       const t = Math.max(0, Math.min(1, (feature.properties.v - p5) / range));
@@ -422,7 +450,7 @@ function renderHeat() {
     }).addTo(map);
   }
 
-  showLegend(minV, maxV, heatData.length);
+  showLegend({ p5, p95, minV, maxV }, heatData.length);
 }
 
 function rerenderHeat() {
@@ -487,13 +515,19 @@ function clearLayers() {
 }
 
 // ── Legend ────────────────────────────────────────────────────────────────────
-function showLegend(minV, maxV, count) {
+// Gradient endpoints map to p5/p95 (the clamped range used by the renderer);
+// raw min/max appear below as the "data range" so users can see how much of
+// the distribution is being saturated.
+function showLegend({ p5, p95, minV, maxV }, count) {
   const metric = currentMetric();
-  document.getElementById('legendMetric').textContent = METRIC_LABELS[metric];
-  document.getElementById('legendCount').textContent  = count + ' listing' + (count === 1 ? '' : 's');
-  document.getElementById('legendMin').textContent    = formatMetric(minV, metric);
-  document.getElementById('legendMax').textContent    = formatMetric(maxV, metric);
-  document.getElementById('legend').classList.remove('hidden');
+  const $ = id => document.getElementById(id);
+  $('legendMetric').textContent = METRIC_LABELS[metric];
+  $('legendCount').textContent  = count + ' listing' + (count === 1 ? '' : 's');
+  $('legendP5').textContent     = formatMetric(p5,   metric);
+  $('legendP95').textContent    = formatMetric(p95,  metric);
+  $('legendMin').textContent    = formatMetric(minV, metric);
+  $('legendMax').textContent    = formatMetric(maxV, metric);
+  $('legend').classList.remove('hidden');
 }
 
 // ── UI helpers ────────────────────────────────────────────────────────────────

@@ -111,9 +111,23 @@ KDE shows where properties are clustered; IDW shows the VALUE of a metric across
 the spatial field. That's what the user asked for: "each data point should be a
 point in the mesh" — a continuous value field, not a density cloud.
 
-**Implementation:** render the IDW grid at ~10% of canvas resolution → `drawImage`
-scale up to full canvas → CSS `blur()` filter for smooth continuous field. This
-gives the smooth mesh appearance cheaply without WebGL.
+**Implementation:** `turf.interpolate` generates a hex IDW grid (configurable
+resolution + IDW power via toolbar sliders) sized to the **convex hull** of
+loaded points (buffered 3 km, not the viewport bbox — otherwise panning
+leaves a giant rectangle stretched across unrelated area). The grid is
+rendered as Leaflet GeoJSON polygons with `preferCanvas: true` for speed,
+and **clipped to the buffered hull** so hexagons in the bbox corners that
+fall outside the hull don't render fake extrapolated values. A dashed
+outline of the hull is drawn so users can see where the field's authority
+ends.
+
+The color gradient is clamped to the p5–p95 band so outliers don't wash
+the field to a uniform color; the legend surfaces both the gradient
+endpoints (p5/p95) and the raw data range (min/max) so the saturation
+isn't hidden from the user.
+
+Hull + bbox are recomputed on every metric switch — DOM in particular is
+sparse and produces a much smaller hull than `price`.
 
 ### metrics.py encodes PDF as Python, not a database or vector store
 The PDF "Measuring Real Estate Trend and Health" was ingested as a Python module.
