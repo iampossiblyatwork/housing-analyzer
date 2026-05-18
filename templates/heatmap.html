@@ -219,8 +219,15 @@ function formatMetric(v, metric) {
 }
 
 function buildHeatData(metric) {
+  // Belt-and-suspenders coord filter: the server-side route already drops
+  // out-of-range lat/lng, but any alt data source feeding allData must not
+  // be able to blow up turf.convex with NaN or a swapped coordinate.
   return allData
-    .filter(p => p[metric] != null && p.lat != null && p.lng != null)
+    .filter(p =>
+      p[metric] != null &&
+      Number.isFinite(p.lat) && Math.abs(p.lat) <= 90 &&
+      Number.isFinite(p.lng) && Math.abs(p.lng) <= 180
+    )
     .map(p => ({ lat: p.lat, lng: p.lng, value: p[metric], raw: p }));
 }
 
@@ -282,6 +289,20 @@ async function fetchAndRender() {
       const b = map.getBounds();
       dataHull = null;
       hullBbox = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
+    }
+
+    // Surface the computed bbox so any residual position/scale weirdness is
+    // diagnosable from devtools without another code change. The "diameter"
+    // check catches the canonical failure mode: a single bad coordinate
+    // slipping both filters and ballooning the hull across a continent.
+    const [bw, bs, be, bn] = hullBbox;
+    const diagMidLat = (bs + bn) / 2;
+    const diagWidthKm  = Math.abs(be - bw) * 111 * Math.cos(diagMidLat * Math.PI / 180);
+    const diagHeightKm = Math.abs(bn - bs) * 111;
+    const hullDiameterKm = Math.hypot(diagWidthKm, diagHeightKm);
+    console.log('heatmap:', { points: heatData.length, hullBbox, hullDiameterKm });
+    if (hullDiameterKm > 200 && heatData.length < 500) {
+      console.warn(`heatmap: hull diameter ${hullDiameterKm.toFixed(0)} km with only ${heatData.length} points — likely a bad coordinate slipped the filters; inspect heatData for outliers`);
     }
 
     renderHeat();

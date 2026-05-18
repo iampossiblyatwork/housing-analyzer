@@ -314,7 +314,13 @@ def heatmap_data():
     for p in results:
         lat_p = p.get("latitude")
         lng_p = p.get("longitude")
-        if not lat_p or not lng_p:
+        # Drop null and out-of-range coordinates — a single bogus point would
+        # otherwise stretch the heatmap's convex hull across the continent and
+        # visibly wreck the IDW grid's position and scale. NaN comparisons are
+        # always False, so the range checks catch NaN too.
+        if (lat_p is None or lng_p is None
+                or not (-90 <= lat_p <= 90)
+                or not (-180 <= lng_p <= 180)):
             continue
         price = p.get("lastSalePrice")
         sqft  = p.get("squareFootage")
