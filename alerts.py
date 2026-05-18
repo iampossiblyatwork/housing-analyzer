@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-ALERTS_FILE = os.path.join(os.path.dirname(__file__), "alerts.json")
+ALERTS_FILE = os.getenv("ALERTS_FILE") or os.path.join(os.path.dirname(__file__), "alerts.json")
 
 
 # ---------- storage ----------

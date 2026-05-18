@@ -12,12 +12,14 @@ Surfaces 24-month sale and rental history with YoY comparisons, seasonal trend a
 leading/lagging signal chain, multi-ZIP time-series comparison, geofence search,
 metric-driven heatmap, investor calculator, metrics reference, and SMS alerts via Twilio.
 
-**Stack:** Python 3.12, Flask, RentCast API, FRED API, Census ACS API, Tailwind CSS (CDN), Chart.js, Leaflet, Twilio
-**Entry point:** `app.py` (Flask)
+**Stack:** Python 3.12, Flask, gunicorn, RentCast API, FRED API, Census ACS API, Tailwind CSS (CDN), Chart.js, Leaflet, Twilio
+**Entry point:** `app.py` (Flask); production WSGI server is gunicorn (see `Dockerfile`)
+**Deployment:** `Dockerfile` + `render.yaml` for Render. 1 GB persistent disk mounted at `/app/.cache` so the 24-hr TTL cache and `alerts.json` survive deploys.
 **API wrapper:** `housing_api.py` — thin wrapper around RentCast v1 REST API
 **Macro data:** `fred_api.py` — FRED API client (optional, graceful fallback)
 **Demographics:** `census_api.py` — Census ACS client (optional, graceful fallback)
 **Cache:** `cache.py` — file-based TTL cache, `.cache/` dir (gitignored)
+**Dev fixture store:** `dev_cache.py` — SQLite-backed; when `DEV_MODE=1`, decorated API wrappers consult it first and write back on miss. `dev_cache.sqlite` is committed so devs can work offline against captured responses.
 **Alert engine:** `alerts.py` — JSON-file-backed alert store with Twilio SMS delivery
 **Metrics layer:** `metrics.py` — full structured encoding of the PDF reference document
 
@@ -51,9 +53,32 @@ UI sections show a clear "configure this" message rather than erroring.
 
 ### File-based TTL cache (cache.py)
 Simple JSON cache in `.cache/` at project root (gitignored). Cache key = MD5 of
-(namespace, params). TTL: 24 hours for FRED, 7 days for Census. No Redis, no
-database — keeps the stack flat. If cache is stale or corrupt, falls through to live
-API call transparently.
+(namespace, params). TTL: 24 hours for FRED and RentCast, 7 days for Census.
+No Redis, no database — keeps the stack flat. If cache is stale or corrupt,
+falls through to live API call transparently. Exposes both inline `get/put`
+helpers and a `@cache.cached(namespace, ttl)` decorator (used by
+`housing_api.py` to gate all RentCast calls to one live hit per 24h).
+
+In production on Render, `.cache/` is mounted on a 1 GB persistent disk so the
+cache survives deploys/restarts — without it, every redeploy re-burns the
+first wave of RentCast calls.
+
+### Dev fixture store (`dev_cache.py`, SQLite, committed)
+Separate from the runtime TTL cache. When `DEV_MODE=1` is set, the
+`@dev_cache.fixture(namespace)` decorator on each API wrapper checks
+`dev_cache.sqlite` first; on miss it falls through to the live API and writes
+the response back. The DB is checked into git so devs can iterate against a
+captured snapshot of real responses without burning quota.
+
+Populate it by running `DEV_MODE=1 python record_fixtures.py 78244 90210 ...`
+with real keys in `.env`, then commit the updated `dev_cache.sqlite`.
+
+In dev mode, `fred_api.is_configured()` and `census_api.is_configured()`
+return True even without an API key, so template "configure this" branches
+yield to the data branches (which read from the fixture).
+
+This is NOT a TTL cache. Entries don't expire — it's a frozen snapshot. The
+runtime TTL cache (`cache.py`) still applies on top in production.
 
 ### Alerts stored as flat JSON (`alerts.json`)
 No database. Alerts are a list of dicts serialized to `alerts.json` at the project
@@ -93,9 +118,23 @@ KDE shows where properties are clustered; IDW shows the VALUE of a metric across
 the spatial field. That's what the user asked for: "each data point should be a
 point in the mesh" — a continuous value field, not a density cloud.
 
-**Implementation:** render the IDW grid at ~10% of canvas resolution → `drawImage`
-scale up to full canvas → CSS `blur()` filter for smooth continuous field. This
-gives the smooth mesh appearance cheaply without WebGL.
+**Implementation:** `turf.interpolate` generates a hex IDW grid (configurable
+resolution + IDW power via toolbar sliders) sized to the **convex hull** of
+loaded points (buffered 3 km, not the viewport bbox — otherwise panning
+leaves a giant rectangle stretched across unrelated area). The grid is
+rendered as Leaflet GeoJSON polygons with `preferCanvas: true` for speed,
+and **clipped to the buffered hull** so hexagons in the bbox corners that
+fall outside the hull don't render fake extrapolated values. A dashed
+outline of the hull is drawn so users can see where the field's authority
+ends.
+
+The color gradient is clamped to the p5–p95 band so outliers don't wash
+the field to a uniform color; the legend surfaces both the gradient
+endpoints (p5/p95) and the raw data range (min/max) so the saturation
+isn't hidden from the user.
+
+Hull + bbox are recomputed on every metric switch — DOM in particular is
+sparse and produces a much smaller hull than `price`.
 
 ### metrics.py encodes PDF as Python, not a database or vector store
 The PDF "Measuring Real Estate Trend and Health" was ingested as a Python module.

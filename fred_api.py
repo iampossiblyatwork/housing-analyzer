@@ -7,6 +7,7 @@ import os, requests
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 import cache
+import dev_cache
 
 load_dotenv()
 
@@ -26,10 +27,13 @@ SERIES = {
 
 
 def _fetch_series(series_id, months_back=36):
-    if not _KEY:
-        return None
     start = (datetime.now() - timedelta(days=30 * months_back)).strftime("%Y-%m-%d")
     cache_params = {"sid": series_id, "start": start}
+    fixture = dev_cache.get("fred", cache_params)
+    if fixture is not None:
+        return fixture
+    if not _KEY:
+        return None
     cached = cache.get("fred", cache_params, ttl=86400)
     if cached is not None:
         return cached
@@ -48,6 +52,7 @@ def _fetch_series(series_id, months_back=36):
             if obs["value"] != "."
         ]
         cache.put("fred", cache_params, data)
+        dev_cache.put("fred", cache_params, data)
         return data
     except Exception:
         return None
@@ -58,7 +63,7 @@ def get_macro_context():
     Returns a dict keyed by series_id with latest value + history.
     Any series that fails or is unconfigured is absent from the dict.
     """
-    if not _KEY:
+    if not _KEY and not dev_cache.is_active():
         return {}
     result = {}
     for sid in SERIES:
@@ -74,4 +79,4 @@ def get_macro_context():
 
 
 def is_configured():
-    return bool(_KEY)
+    return bool(_KEY) or dev_cache.is_active()

@@ -1,0 +1,36 @@
+services:
+  - type: web
+    name: housing-analyzer
+    runtime: docker
+    plan: starter
+    region: oregon
+    healthCheckPath: /
+    envVars:
+      - key: RENTCAST_API_KEY
+        sync: false
+      - key: FRED_API_KEY
+        sync: false
+      - key: CENSUS_API_KEY
+        sync: false
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_FROM_NUMBER
+        sync: false
+      - key: DEV_MODE
+        value: "0"
+      - key: PYTHON_VERSION
+        value: "3.12"
+      # Keep alerts.json on the persistent disk so SMS subscriptions
+      # survive deploys/restarts. .cache/ is the disk mount point.
+      - key: ALERTS_FILE
+        value: /app/.cache/alerts.json
+    # Persistent disk so the 24-hour TTL cache (.cache/) and alerts.json
+    # survive deploys and restarts. Without this, every redeploy re-burns the
+    # first round of RentCast calls. 1 GB is comfortably enough for the JSON
+    # cache footprint; requires a paid plan.
+    disk:
+      name: housing-cache
+      mountPath: /app/.cache
+      sizeGB: 1
