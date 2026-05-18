@@ -12,8 +12,9 @@ Surfaces 24-month sale and rental history with YoY comparisons, seasonal trend a
 leading/lagging signal chain, multi-ZIP time-series comparison, geofence search,
 metric-driven heatmap, investor calculator, metrics reference, and SMS alerts via Twilio.
 
-**Stack:** Python 3.12, Flask, RentCast API, FRED API, Census ACS API, Tailwind CSS (CDN), Chart.js, Leaflet, Twilio
-**Entry point:** `app.py` (Flask)
+**Stack:** Python 3.12, Flask, gunicorn, RentCast API, FRED API, Census ACS API, Tailwind CSS (CDN), Chart.js, Leaflet, Twilio
+**Entry point:** `app.py` (Flask); production WSGI server is gunicorn (see `Dockerfile`)
+**Deployment:** `Dockerfile` + `render.yaml` for Render. 1 GB persistent disk mounted at `/app/.cache` so the 24-hr TTL cache and `alerts.json` survive deploys.
 **API wrapper:** `housing_api.py` — thin wrapper around RentCast v1 REST API
 **Macro data:** `fred_api.py` — FRED API client (optional, graceful fallback)
 **Demographics:** `census_api.py` — Census ACS client (optional, graceful fallback)
@@ -52,9 +53,15 @@ UI sections show a clear "configure this" message rather than erroring.
 
 ### File-based TTL cache (cache.py)
 Simple JSON cache in `.cache/` at project root (gitignored). Cache key = MD5 of
-(namespace, params). TTL: 24 hours for FRED, 7 days for Census. No Redis, no
-database — keeps the stack flat. If cache is stale or corrupt, falls through to live
-API call transparently.
+(namespace, params). TTL: 24 hours for FRED and RentCast, 7 days for Census.
+No Redis, no database — keeps the stack flat. If cache is stale or corrupt,
+falls through to live API call transparently. Exposes both inline `get/put`
+helpers and a `@cache.cached(namespace, ttl)` decorator (used by
+`housing_api.py` to gate all RentCast calls to one live hit per 24h).
+
+In production on Render, `.cache/` is mounted on a 1 GB persistent disk so the
+cache survives deploys/restarts — without it, every redeploy re-burns the
+first wave of RentCast calls.
 
 ### Dev fixture store (`dev_cache.py`, SQLite, committed)
 Separate from the runtime TTL cache. When `DEV_MODE=1` is set, the

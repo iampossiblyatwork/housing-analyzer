@@ -1,4 +1,4 @@
-import json, os, hashlib, time
+import functools, json, os, hashlib, time
 
 _CACHE_DIR = os.path.join(os.path.dirname(__file__), ".cache")
 os.makedirs(_CACHE_DIR, exist_ok=True)
@@ -23,3 +23,19 @@ def get(namespace, params, ttl):
 def put(namespace, params, data):
     with open(_path(namespace, params), "w") as f:
         json.dump({"ts": time.time(), "data": data}, f)
+
+
+def cached(namespace, ttl):
+    """Decorator: TTL-cache the function's return value keyed by (args, kwargs)."""
+    def decorator(fn):
+        @functools.wraps(fn)
+        def wrapper(*args, **kwargs):
+            key = {"args": list(args), "kwargs": kwargs}
+            hit = get(namespace, key, ttl)
+            if hit is not None:
+                return hit
+            result = fn(*args, **kwargs)
+            put(namespace, key, result)
+            return result
+        return wrapper
+    return decorator
