@@ -34,9 +34,9 @@
 
     <div class="flex flex-col">
       <label class="text-label-sm text-on-surface-variant mb-1">
-        Resolution <span id="resLabel" class="font-semibold text-secondary ml-1">60</span>
+        Resolution <span id="resLabel" class="font-semibold text-secondary ml-1">85</span>
       </label>
-      <input id="resSlider" type="range" min="20" max="120" value="60" step="5"
+      <input id="resSlider" type="range" min="20" max="140" value="85" step="5"
              oninput="document.getElementById('resLabel').textContent = this.value; rerenderHeat();"
              class="w-32 accent-secondary">
     </div>
@@ -52,9 +52,9 @@
 
     <div class="flex flex-col">
       <label class="text-label-sm text-on-surface-variant mb-1">
-        Opacity <span id="opacityLabel" class="font-semibold text-secondary ml-1">70%</span>
+        Opacity <span id="opacityLabel" class="font-semibold text-secondary ml-1">75%</span>
       </label>
-      <input id="opacitySlider" type="range" min="20" max="95" value="70"
+      <input id="opacitySlider" type="range" min="20" max="95" value="75"
              oninput="document.getElementById('opacityLabel').textContent = this.value + '%'; rerenderHeat();"
              class="w-32 accent-secondary">
     </div>
@@ -129,12 +129,28 @@
 
 {% block scripts %}
 <script src="https://unpkg.com/@turf/turf@7/turf.min.js"></script>
+<style>
+  /* Smooth the hex grid into a continuous field. The blur dissolves the
+     hexagon edges; mix-blend-mode lets the basemap's labels and roads
+     show through so the heat doesn't look pasted on top.            */
+  .leaflet-pane.heat-pane {
+    mix-blend-mode: multiply;
+    filter: blur(10px) saturate(1.05);
+    will-change: transform;
+  }
+  /* The hull outline is informational, not decorative — keep it whisper-thin
+     and only visible on hover over the map area so it isn't a constant
+     visual element fighting with the heat field.                          */
+  .leaflet-pane.hull-pane { opacity: 0.55; }
+  /* Listing markers look more crafted with a soft glow under the white ring. */
+  .leaflet-pane.listing-pane canvas { filter: drop-shadow(0 1px 2px rgba(11,28,48,0.25)); }
+</style>
 <script>
 // ── State ─────────────────────────────────────────────────────────────────────
 let allData     = [];     // raw API response
 let heatData    = [];     // filtered {lat, lng, value, raw} for the current metric
 let heatLayer   = null;   // L.geoJSON of the interpolated cells
-let hullLayer   = null;   // L.geoJSON dashed outline of dataHull — shows the user where the field's authority ends
+let hullLayer   = null;   // L.geoJSON soft outline of dataHull — shows the user where the field's authority ends
 let markerGroup = null;   // L.layerGroup of property CircleMarkers
 let dataHull    = null;   // turf Feature<Polygon> — buffered convex hull of loaded points
 let hullBbox    = null;   // [w, s, e, n] derived from dataHull (anchors the IDW grid)
@@ -143,19 +159,40 @@ let moveTimer   = null;   // debounce timer for auto-load
 let currentAbort = null;  // AbortController for in-flight fetch
 
 // ── Map init ──────────────────────────────────────────────────────────────────
-// preferCanvas dramatically speeds up rendering of the thousands of small
-// polygons turf.interpolate produces.
-const map = L.map('map', { preferCanvas: true }).setView([29.42, -98.49], 11);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  attribution: '© OpenStreetMap contributors',
-  maxZoom: 18,
+// No preferCanvas at the map level — we attach explicit per-pane canvas
+// renderers below. The previous setup (preferCanvas: true + layers assigned
+// to a custom pane with no renderer) bound paths to the default overlayPane
+// canvas, which has no padding buffer and re-renders only on moveend — the
+// visible symptom was the heat field "drifting" during pan and re-sizing
+// inconsistently at zoom changes.
+const map = L.map('map').setView([29.42, -98.49], 11);
+
+// CARTO Positron — neutral light tiles let the heat colors carry the chart
+// instead of fighting OSM's reds/greens. Falls back to OSM if CARTO 404s.
+L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+  attribution: '© OpenStreetMap contributors © CARTO',
+  subdomains: 'abcd',
+  maxZoom: 19,
 }).addTo(map);
 
-// Dedicated panes so listing markers always sit above the heat field.
+// Dedicated panes — each gets its OWN canvas renderer with viewport padding,
+// so layers actually render where they're declared (instead of falling back
+// to the default overlayPane canvas) and pans within ±50% of the viewport
+// don't reveal unrendered edges.
 map.createPane('heatPane');
 map.getPane('heatPane').style.zIndex = 410;
+map.getPane('heatPane').classList.add('heat-pane');
+const heatRenderer = L.canvas({ pane: 'heatPane', padding: 0.5 });
+
+map.createPane('hullPane');
+map.getPane('hullPane').style.zIndex = 420;
+map.getPane('hullPane').classList.add('hull-pane');
+const hullRenderer = L.canvas({ pane: 'hullPane', padding: 0.5 });
+
 map.createPane('listingPane');
 map.getPane('listingPane').style.zIndex = 450;
+map.getPane('listingPane').classList.add('listing-pane');
+const listingRenderer = L.canvas({ pane: 'listingPane', padding: 0.5 });
 
 // IP-based recenter on first load.
 fetch('https://ipapi.co/json/')
@@ -418,33 +455,38 @@ function renderHeat() {
   const opacity = parseInt(document.getElementById('opacitySlider').value) / 100;
 
   heatLayer = L.geoJSON(clipped, {
-    pane: 'heatPane',
+    pane:     'heatPane',
+    renderer: heatRenderer,
     style: feature => {
       const t = Math.max(0, Math.min(1, (feature.properties.v - p5) / range));
       const [r, g, b] = tToRGB(t);
       return {
+        // Slight overlap on the fill (no stroke, but a tiny 0.5px weight of
+        // the same color) closes the sub-pixel seams between adjacent hexes
+        // that the blur filter would otherwise reveal as a faint hex grid.
         fillColor:   `rgb(${r},${g},${b})`,
         fillOpacity: opacity,
-        stroke:      false,
-        weight:      0,
+        color:       `rgb(${r},${g},${b})`,
+        weight:      0.5,
+        opacity:     opacity,
       };
     },
     interactive: false,
   }).addTo(map);
 
-  // Faint dashed outline of the buffered hull so the user can see where the
-  // IDW field's authority actually ends — kills the "the heatmap is in the
-  // wrong place" misread when the hull is smaller than the viewport.
+  // Soft solid-stroke outline of the buffered hull so the user can see where
+  // the IDW field's authority ends. Replaced the previous dashed look — it
+  // read as unfinished. The CSS .hull-pane class tones it down further.
   if (hullLayer) map.removeLayer(hullLayer);
   if (dataHull) {
     hullLayer = L.geoJSON(dataHull, {
-      pane: 'heatPane',
+      pane:     'hullPane',
+      renderer: hullRenderer,
       style: {
-        color:       '#0b1c30',
-        weight:      1,
-        opacity:     0.4,
-        dashArray:   '4 4',
-        fill:        false,
+        color:   '#0b1c30',
+        weight:  1.25,
+        opacity: 0.7,
+        fill:    false,
       },
       interactive: false,
     }).addTo(map);
@@ -475,9 +517,10 @@ function renderMarkers() {
     const [r, g, b] = tToRGB(t);
     const dot = L.circleMarker([p.lat, p.lng], {
       pane:        'listingPane',
-      radius:      6,
+      renderer:    listingRenderer,
+      radius:      5.5,
       fillColor:   `rgb(${r},${g},${b})`,
-      fillOpacity: 0.95,
+      fillOpacity: 1,
       color:       '#ffffff',
       weight:      1.5,
     });
