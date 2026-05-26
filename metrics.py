@@ -3,6 +3,9 @@ Real estate market metric definitions, thresholds, and interpretations.
 Source: "Measuring Real Estate Trend and Health: A Professional Reference"
 """
 
+import math
+
+
 # ── Supply ────────────────────────────────────────────────────────────────────
 
 def interpret_months_of_supply(mos):
@@ -651,6 +654,154 @@ def assess_signal_chain(market_data, macro_data):
 
         result.append(entry)
     return result
+
+
+# ── Research methodology ──────────────────────────────────────────────────────
+# Framework references for housing research techniques. Same role as
+# DATA_SOURCES / COMMON_PITFALLS — reference data the /reference page surfaces.
+
+RESEARCH_METHODS = {
+    "mixed_methods": {
+        "name": "Mixed-methods research",
+        "premise": (
+            "Combines qualitative (interviews, focus groups, case studies) with quantitative "
+            "(surveys, administrative records, econometric series) data to triangulate findings."
+        ),
+        "designs": [
+            ("Sequential",    "Qualitative then quantitative (or vice versa)."),
+            ("Concurrent",    "Both streams collected and analyzed simultaneously."),
+            ("Transformative","Both integrated through a single theoretical framework."),
+        ],
+        "tradeoffs": (
+            "More comprehensive but resource-intensive; demands methodological breadth across "
+            "qualitative and quantitative traditions and disciplined data integration."
+        ),
+    },
+    "spatial_analysis": {
+        "name": "Spatial analysis (GIS + spatial econometrics)",
+        "premise": (
+            "Housing is intrinsically spatial — proximity to amenities, employment, and "
+            "neighborhood effects shape outcomes. Regression that ignores spatial structure "
+            "under-states standard errors and mis-attributes causation."
+        ),
+        "core_tools": [
+            ("Spatial autocorrelation (Moran's I)", "Is the metric clustered, random, or dispersed?"),
+            ("Spatial autoregressive model",        "y = ρWy + Xβ + ε — accounts for neighbor spillover."),
+            ("IDW / kriging interpolation",         "Continuous value field from discrete observations."),
+            ("Submarket identification",            "Cluster ZIPs/tracts by behavior, not just adjacency."),
+        ],
+        "spatial_ar_model": "y = ρWy + Xβ + ε",
+    },
+    "policy_evaluation": {
+        "name": "Policy evaluation",
+        "premise": (
+            "Attributing an outcome to a housing policy requires either randomization or a "
+            "credible substitute. Naïve before/after comparisons conflate the policy with "
+            "concurrent macro shifts (rates, employment, migration)."
+        ),
+        "methods": [
+            {
+                "name":      "Experimental (RCT)",
+                "summary":   "Random assignment to treatment and control.",
+                "strengths": "Causal identification by design.",
+                "limits":    "Costly, limited generalizability, rarely feasible at policy scale.",
+            },
+            {
+                "name":      "Quasi-experimental",
+                "summary":   "Observational data with constructed comparison groups (DiD, synthetic control).",
+                "strengths": "Works on existing administrative data.",
+                "limits":    "Vulnerable to unobserved confounders; parallel-trends assumption is strong.",
+            },
+            {
+                "name":      "Propensity score matching",
+                "summary":   "Match treated and untreated units by their probability of treatment.",
+                "strengths": "Mitigates selection bias on observed covariates.",
+                "limits":    "Cannot correct for unobserved selection; needs rich covariate data.",
+            },
+            {
+                "name":      "Regression discontinuity",
+                "summary":   "Compare units just above vs. just below a treatment cutoff.",
+                "strengths": "Clean local causal effect when the cutoff is sharp and unmanipulated.",
+                "limits":    "Identifies effects only near the threshold; needs density continuity at the cutoff.",
+            },
+        ],
+    },
+}
+
+RESEARCH_PITFALLS = [
+    "Treating qualitative findings as anecdotal rather than as triangulation evidence",
+    "Running regression on geo-located data without testing for spatial autocorrelation",
+    "Interpreting an IDW or kriging surface when Moran's I is near zero (no real spatial signal)",
+    "Calling a before/after price comparison a 'policy impact' without a control group",
+    "Using propensity score matching with sparse covariates — unobserved selection still bites",
+    "Stretching regression discontinuity beyond a narrow window around the cutoff",
+]
+
+
+# ── Spatial autocorrelation (Moran's I) ──────────────────────────────────────
+
+def _haversine_km(lat1, lng1, lat2, lng2):
+    R = 6371.0
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dp = math.radians(lat2 - lat1)
+    dl = math.radians(lng2 - lng1)
+    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return 2 * R * math.asin(math.sqrt(a))
+
+
+def compute_morans_i(points):
+    """
+    Global Moran's I for a metric across geo-located points.
+
+    points = [{"lat": ..., "lng": ..., "value": ...}, ...]
+
+    Uses inverse-distance spatial weights (no external deps). Returns a float
+    in roughly [-1, 1] — positive = clustered, ~0 = random, negative = dispersed.
+    Returns None if fewer than 3 valid points or zero variance.
+    """
+    pts = [p for p in points
+           if p.get("value") is not None
+           and p.get("lat")   is not None
+           and p.get("lng")   is not None]
+    n = len(pts)
+    if n < 3:
+        return None
+
+    mean = sum(p["value"] for p in pts) / n
+    devs = [p["value"] - mean for p in pts]
+    denom = sum(d * d for d in devs)
+    if denom == 0:
+        return None
+
+    weight_sum = 0.0
+    weighted_cov = 0.0
+    for i in range(n):
+        for j in range(n):
+            if i == j:
+                continue
+            d_km = _haversine_km(pts[i]["lat"], pts[i]["lng"], pts[j]["lat"], pts[j]["lng"])
+            w = 1.0 / (d_km + 0.1)
+            weight_sum += w
+            weighted_cov += w * devs[i] * devs[j]
+
+    if weight_sum == 0:
+        return None
+    return (n / weight_sum) * (weighted_cov / denom)
+
+
+def interpret_morans_i(i_value):
+    """Translate Moran's I into a qualitative spatial-clustering label."""
+    if i_value is None:
+        return None
+    if i_value > 0.3:
+        return "Strong positive autocorrelation — values are markedly clustered."
+    if i_value > 0.1:
+        return "Moderate clustering — nearby points share similar values."
+    if i_value > -0.1:
+        return "Near-random distribution — limited spatial structure (IDW surface may mislead)."
+    if i_value > -0.3:
+        return "Moderate dispersion — high values neighbor low values."
+    return "Strong negative autocorrelation — checkerboard-like dispersion."
 
 
 # ── Convenience: interpret a market stats dict from the RentCast API ──────────
