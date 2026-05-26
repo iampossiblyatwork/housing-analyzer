@@ -6,6 +6,11 @@ services:
     region: oregon
     healthCheckPath: /
     envVars:
+      # Postgres connection string — auto-wired from the database below.
+      - key: DATABASE_URL
+        fromDatabase:
+          name: housing-db
+          property: connectionString
       - key: RENTCAST_API_KEY
         sync: false
       - key: FRED_API_KEY
@@ -18,19 +23,53 @@ services:
         sync: false
       - key: TWILIO_FROM_NUMBER
         sync: false
+      # Comma-separated list of 5-digit ZIPs to keep "always warm" — these
+      # never expire from the tracked list. Example: "78244,90210,11215"
+      - key: RENTCAST_WARM_ZIPS
+        sync: false
+      # Soft-miss is strict by default. Set to "1" to let per-address AVMs
+      # (/property) and geofence searches (/heatmap) fall through to live
+      # RentCast on cache miss. Market stats (/market) stay strict regardless.
+      - key: RENTCAST_ALLOW_LIVE
+        value: "0"
       - key: DEV_MODE
         value: "0"
       - key: PYTHON_VERSION
         value: "3.12"
-      # Keep alerts.json on the persistent disk so SMS subscriptions
-      # survive deploys/restarts. .cache/ is the disk mount point.
+      # alerts.json still lives on the disk so SMS subscriptions survive
+      # deploys. The runtime cache itself has moved to Postgres.
       - key: ALERTS_FILE
         value: /app/.cache/alerts.json
-    # Persistent disk so the 24-hour TTL cache (.cache/) and alerts.json
-    # survive deploys and restarts. Without this, every redeploy re-burns the
-    # first round of RentCast calls. 1 GB is comfortably enough for the JSON
-    # cache footprint; requires a paid plan.
     disk:
       name: housing-cache
       mountPath: /app/.cache
       sizeGB: 1
+
+  # Daily refresh cron — the ONLY thing that calls the live RentCast / FRED /
+  # Census APIs in production. Schedule is UTC. 03:00 UTC ≈ 22:00 / 23:00 ET.
+  - type: cron
+    name: housing-refresh
+    runtime: docker
+    plan: starter
+    region: oregon
+    schedule: "0 3 * * *"
+    dockerCommand: python refresh_cache.py
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: housing-db
+          property: connectionString
+      - key: RENTCAST_API_KEY
+        sync: false
+      - key: FRED_API_KEY
+        sync: false
+      - key: CENSUS_API_KEY
+        sync: false
+      - key: RENTCAST_WARM_ZIPS
+        sync: false
+
+databases:
+  - name: housing-db
+    plan: basic-256mb         # cheapest paid tier; the free plan expires after 30 days
+    region: oregon
+    postgresMajorVersion: "16"

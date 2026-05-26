@@ -1,11 +1,18 @@
 {% extends "base.html" %}
-{% block title %}Error{% endblock %}
-{% block page_title %}Error{% endblock %}
+{% block title %}{{ "Data pending" if kind == "pending" else "Error" }}{% endblock %}
+{% block page_title %}{{ "Data pending" if kind == "pending" else "Error" }}{% endblock %}
 {% block content %}
 <div class="flex flex-col items-center justify-center py-16 text-center max-w-lg mx-auto">
-  <span class="material-symbols-outlined text-error mb-4" style="font-size:56px">error</span>
-  <h2 class="text-headline-md font-semibold text-primary mb-2">Something went wrong</h2>
-  <p class="text-label-md text-on-surface-variant mb-6">{{ message }}</p>
+  {% if kind == "pending" %}
+    <span class="material-symbols-outlined text-secondary mb-4" style="font-size:56px">hourglass_top</span>
+    <h2 class="text-headline-md font-semibold text-primary mb-2">We don't have this yet</h2>
+    <p class="text-label-md text-on-surface-variant mb-6">{{ message }}</p>
+    <p class="text-label-sm text-on-surface-variant mb-6">The refresh job runs daily and will pull this ZIP on its next pass.</p>
+  {% else %}
+    <span class="material-symbols-outlined text-error mb-4" style="font-size:56px">error</span>
+    <h2 class="text-headline-md font-semibold text-primary mb-2">Something went wrong</h2>
+    <p class="text-label-md text-on-surface-variant mb-6">{{ message }}</p>
+  {% endif %}
   <a href="/" class="inline-flex items-center gap-2 px-4 py-2 border border-outline-variant text-on-surface-variant text-label-md rounded-lg hover:bg-surface-container-high transition-colors">
     <span class="material-symbols-outlined" style="font-size:18px">arrow_back</span>
     Back to Home

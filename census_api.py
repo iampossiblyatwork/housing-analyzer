@@ -1,10 +1,14 @@
 """
 Census ACS 5-year estimates for ZIP code tabulation areas.
 Free key at https://api.census.gov/data/key_signup.html
-Set CENSUS_API_KEY in .env. Returns None if unconfigured.
+Set CENSUS_API_KEY in .env.
+
+Soft-miss in production. The refresh cron calls .refresh() per tracked ZIP.
 """
-import os, requests
+import os
+import requests
 from dotenv import load_dotenv
+
 import cache
 import dev_cache
 
@@ -21,15 +25,11 @@ _VARS = {
 }
 
 
+@dev_cache.fixture("census.demographics")
+@cache.cached("census.demographics", zip_arg="zip_code")
 def get_zip_demographics(zip_code):
-    fixture = dev_cache.get("census", {"zip": zip_code})
-    if fixture is not None:
-        return fixture
     if not _KEY:
         return None
-    cached = cache.get("census", {"zip": zip_code}, ttl=604800)  # 7 days
-    if cached is not None:
-        return cached
     try:
         r = requests.get(_BASE, params={
             "get": ",".join(_VARS.keys()),
@@ -53,8 +53,6 @@ def get_zip_demographics(zip_code):
         vu = data.get("vacant_units")
         if hu and vu is not None and hu > 0:
             data["vacancy_rate"] = round(vu / hu * 100, 1)
-        cache.put("census", {"zip": zip_code}, data)
-        dev_cache.put("census", {"zip": zip_code}, data)
         return data
     except Exception:
         return None

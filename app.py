@@ -1,11 +1,34 @@
+import os
 from flask import Flask, render_template, request, redirect, url_for, jsonify
 import housing_api
 import alerts as alert_mgr
 import metrics
 import fred_api
 import census_api
+import db
 
 app = Flask(__name__)
+
+
+# ── Postgres bootstrap ────────────────────────────────────────────────────────
+# Initialize schema and seed the static ZIP floor at process start. Failures
+# here intentionally crash the worker — without the DB the app is non-functional
+# (everything reads through cache.py now). Render's healthcheck will catch it.
+if db.is_configured():
+    db.init_db()
+    static_zips = [z.strip() for z in os.getenv("RENTCAST_WARM_ZIPS", "").replace(";", ",").split(",")
+                   if z.strip().isdigit() and len(z.strip()) == 5]
+    db.seed_static_zips(static_zips)
+
+
+def _soft_miss(zip_code, what):
+    """Standardized response when a cache lookup returns None for a tracked entity."""
+    db.track_zip(zip_code)
+    return render_template(
+        "error.html",
+        kind="pending",
+        message=f"{what} for ZIP {zip_code} isn't in the cache yet. We've added it to the refresh queue.",
+    )
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -47,10 +70,13 @@ def market():
     if not zip_code:
         return redirect(url_for("index"))
 
+    db.track_zip(zip_code)
     try:
         data = housing_api.get_market_stats(zip_code, history_range=24)
     except Exception as e:
         return render_template("error.html", message=str(e))
+    if data is None:
+        return _soft_miss(zip_code, "Market data")
 
     sale_chart = _enrich_chart(_build_history(data.get("saleData", {}), "medianPrice"))
     rent_chart = _enrich_chart(_build_history(data.get("rentalData", {}), "medianRent"))
@@ -121,6 +147,8 @@ def property_lookup():
             }
 
     zip_code     = prop.get("zipCode") if prop else None
+    if zip_code:
+        db.track_zip(zip_code)
     demographics = census_api.get_zip_demographics(zip_code) if zip_code else None
 
     return render_template(
@@ -148,10 +176,15 @@ def compare():
     if len(zips) < 2:
         return render_template("compare.html", zips=[], datasets=[], market_data=[])
 
+    for z in zips:
+        db.track_zip(z)
     try:
         raw = [housing_api.get_market_stats(z, history_range=24) for z in zips]
     except Exception as e:
         return render_template("error.html", message=str(e))
+    missing = [z for z, d in zip(zips, raw) if d is None]
+    if missing:
+        return _soft_miss(missing[0], f"Market data (one of {len(missing)} ZIPs)")
 
     datasets = []
     for z, d in zip(zips, raw):
@@ -174,8 +207,9 @@ def signals():
     market_data = {}
 
     if zip_code:
+        db.track_zip(zip_code)
         try:
-            market_data = housing_api.get_market_stats(zip_code, history_range=24)
+            market_data = housing_api.get_market_stats(zip_code, history_range=24) or {}
         except Exception:
             market_data = {}
 

@@ -1,11 +1,17 @@
 """
 FRED (Federal Reserve Economic Data) API client.
 Free key at https://fred.stlouisfed.org/docs/api/api_key.html
-Set FRED_API_KEY in .env. Gracefully returns None if unconfigured.
+Set FRED_API_KEY in .env.
+
+Behaves like the rest of the cache layer: soft-miss in production, the
+refresh cron is responsible for populating data. In DEV_MODE the dev_cache
+fixture short-circuits everything as before.
 """
-import os, requests
+import os
+import requests
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
+
 import cache
 import dev_cache
 
@@ -13,6 +19,7 @@ load_dotenv()
 
 _BASE = "https://api.stlouisfed.org/fred/series/observations"
 _KEY  = os.getenv("FRED_API_KEY", "")
+_MONTHS_BACK = 36
 
 # series_id → (friendly_name, unit)
 SERIES = {
@@ -26,17 +33,13 @@ SERIES = {
 }
 
 
-def _fetch_series(series_id, months_back=36):
-    start = (datetime.now() - timedelta(days=30 * months_back)).strftime("%Y-%m-%d")
-    cache_params = {"sid": series_id, "start": start}
-    fixture = dev_cache.get("fred", cache_params)
-    if fixture is not None:
-        return fixture
+@dev_cache.fixture("fred.series")
+@cache.cached("fred.series")
+def _fetch_series(series_id):
+    """One FRED series. Strict soft-miss; cron calls .refresh() to populate."""
     if not _KEY:
         return None
-    cached = cache.get("fred", cache_params, ttl=86400)
-    if cached is not None:
-        return cached
+    start = (datetime.now() - timedelta(days=30 * _MONTHS_BACK)).strftime("%Y-%m-%d")
     try:
         r = requests.get(_BASE, params={
             "series_id":         series_id,
@@ -46,14 +49,11 @@ def _fetch_series(series_id, months_back=36):
             "sort_order":        "asc",
         }, timeout=10)
         r.raise_for_status()
-        data = [
+        return [
             {"date": obs["date"], "value": float(obs["value"])}
             for obs in r.json().get("observations", [])
             if obs["value"] != "."
         ]
-        cache.put("fred", cache_params, data)
-        dev_cache.put("fred", cache_params, data)
-        return data
     except Exception:
         return None
 
@@ -61,7 +61,8 @@ def _fetch_series(series_id, months_back=36):
 def get_macro_context():
     """
     Returns a dict keyed by series_id with latest value + history.
-    Any series that fails or is unconfigured is absent from the dict.
+    Any series that isn't cached yet is absent from the dict — the cron
+    fills these in on its next run.
     """
     if not _KEY and not dev_cache.is_active():
         return {}
@@ -76,6 +77,12 @@ def get_macro_context():
                 "history": obs,
             }
     return result
+
+
+def refresh_all():
+    """Cron entrypoint: live-fetch every series and write to cache."""
+    for sid in SERIES:
+        _fetch_series.refresh(sid)
 
 
 def is_configured():

@@ -12,14 +12,16 @@ Surfaces 24-month sale and rental history with YoY comparisons, seasonal trend a
 leading/lagging signal chain, multi-ZIP time-series comparison, geofence search,
 metric-driven heatmap, investor calculator, metrics reference, and SMS alerts via Twilio.
 
-**Stack:** Python 3.12, Flask, gunicorn, RentCast API, FRED API, Census ACS API, Tailwind CSS (CDN), Chart.js, Leaflet, Twilio
+**Stack:** Python 3.12, Flask, gunicorn, RentCast API, FRED API, Census ACS API, Tailwind CSS (CDN), Chart.js, Leaflet, Twilio, Postgres
 **Entry point:** `app.py` (Flask); production WSGI server is gunicorn (see `Dockerfile`)
-**Deployment:** `Dockerfile` + `render.yaml` for Render. 1 GB persistent disk mounted at `/app/.cache` so the 24-hr TTL cache and `alerts.json` survive deploys.
+**Deployment:** `Dockerfile` + `render.yaml` for Render. Three Blueprint resources: web service, daily cron, Postgres database. 1 GB persistent disk at `/app/.cache` remains for `alerts.json` only — the API cache itself moved to Postgres.
 **API wrapper:** `housing_api.py` — thin wrapper around RentCast v1 REST API
-**Macro data:** `fred_api.py` — FRED API client (optional, graceful fallback)
-**Demographics:** `census_api.py` — Census ACS client (optional, graceful fallback)
-**Cache:** `cache.py` — file-based TTL cache, `.cache/` dir (gitignored)
-**Dev fixture store:** `dev_cache.py` — SQLite-backed; when `DEV_MODE=1`, decorated API wrappers consult it first and write back on miss. `dev_cache.sqlite` is committed so devs can work offline against captured responses.
+**Macro data:** `fred_api.py` — FRED API client
+**Demographics:** `census_api.py` — Census ACS client
+**Postgres layer:** `db.py` — connection pool, schema bootstrap, `api_cache` and `tracked_zips` tables
+**Cache decorator:** `cache.py` — Postgres-backed, **soft-miss-by-default**; `.refresh()` escape hatch for the cron
+**Refresh cron:** `refresh_cache.py` — daily entrypoint; the ONLY thing that calls the live external APIs in production
+**Dev fixture store:** `dev_cache.py` — SQLite-backed, layered above Postgres cache. When `DEV_MODE=1`, decorated API wrappers consult it first.
 **Alert engine:** `alerts.py` — JSON-file-backed alert store with Twilio SMS delivery
 **Metrics layer:** `metrics.py` — full structured encoding of the PDF reference document
 
@@ -51,17 +53,43 @@ All local market data comes from `api.rentcast.io/v1`. FRED and Census are opt-i
 each has its own env var (`FRED_API_KEY`, `CENSUS_API_KEY`). If unconfigured, affected
 UI sections show a clear "configure this" message rather than erroring.
 
-### File-based TTL cache (cache.py)
-Simple JSON cache in `.cache/` at project root (gitignored). Cache key = MD5 of
-(namespace, params). TTL: 24 hours for FRED and RentCast, 7 days for Census.
-No Redis, no database — keeps the stack flat. If cache is stale or corrupt,
-falls through to live API call transparently. Exposes both inline `get/put`
-helpers and a `@cache.cached(namespace, ttl)` decorator (used by
-`housing_api.py` to gate all RentCast calls to one live hit per 24h).
+### Postgres cache + daily refresh cron (`db.py`, `cache.py`, `refresh_cache.py`)
+The runtime cache is a Postgres database, not the filesystem. Two tables:
 
-In production on Render, `.cache/` is mounted on a 1 GB persistent disk so the
-cache survives deploys/restarts — without it, every redeploy re-burns the
-first wave of RentCast calls.
+- `api_cache(cache_key, namespace, zip, payload jsonb, fetched_at)` — generic
+  `(namespace, args)` → JSON payload, queryable by ZIP so the cron can find
+  what to refresh
+- `tracked_zips(zip, tier, last_user_seen, last_refreshed)` — what the cron
+  iterates. `tier='static'` is the hand-picked floor seeded from the
+  `RENTCAST_WARM_ZIPS` env var; `tier='auto'` rows are inserted automatically
+  by `db.track_zip(zip)` whenever a user query hits `/market`, `/property`,
+  `/signals`, or `/compare`. Auto entries are eligible for refresh for 30 days
+  after their last user view, then expire from the cron's working set.
+
+**Soft-miss is the default.** A `@cache.cached`-decorated function that misses
+the cache returns `None` instead of calling the live API. The daily cron
+(`refresh_cache.py`) is the only thing that calls live RentCast / FRED /
+Census in production. It uses `.refresh()` on each wrapped function — that
+method bypasses the cache, calls live, writes the result back.
+
+User-facing routes that hit a soft miss render a "Data pending" page
+(`error.html` with `kind="pending"`) that explains the ZIP was added to the
+refresh queue. The user sees fresh data on their next visit after the cron
+runs.
+
+**Exception for non-warmable endpoints:** Per-address AVMs (`/property`) and
+geofence searches (`/heatmap`) can't be pre-warmed because the cron doesn't
+know which addresses or coordinates users will query. The decorator on those
+wrappers passes `allow_live=True`; if the env var `RENTCAST_ALLOW_LIVE=1` is
+set, they fall through to a live API call on miss. Default is `0` (strict).
+Market stats (`/market`) are always strict regardless.
+
+**DEV_MODE compatibility.** When `DEV_MODE=1`, the `cache.cached` decorator
+also allows live-fetch-on-miss so `record_fixtures.py` keeps working. Without
+this exception the recording flow would just write `None` into the fixture DB.
+
+The 1 GB Render disk at `/app/.cache` is still mounted — only `alerts.json`
+uses it now. The cache itself has moved off disk entirely.
 
 ### Dev fixture store (`dev_cache.py`, SQLite, committed)
 Separate from the runtime TTL cache. When `DEV_MODE=1` is set, the
@@ -88,6 +116,9 @@ indexing, or concurrency safety at this scale. SQLite would be the natural next 
 ### Alert evaluation happens on page load, not on a schedule
 `alerts.check_and_notify()` is called every time `/market` is loaded for a given ZIP.
 A background scheduler was not added — keeping it simple until there's real need.
+(Note: in the soft-miss world, `/market` only loads with real data when the
+cache has the ZIP, so alert evaluation effectively runs once per day per ZIP —
+the first user visit after the cron refreshes.)
 
 ### SMS-only alerting (Twilio)
 Only SMS delivery is implemented. Twilio credentials are optional — if not configured,
@@ -400,3 +431,64 @@ need more data than last year to account for seasonality"
 - YoY bars on signals/macro charts not yet implemented (deferred for context reasons)
 - `property.html` — Census demographics block added to route but template not yet updated
   (needs `demographics` + `census_configured` blocks added)
+
+### 2026-05-26 — Session 4
+**Trigger:** "We need a postgres db that I'll back with a cron job to not hit
+my rent cast api limit."
+
+**Architecture change.** The file-based cache is gone. RentCast, FRED, and
+Census all read from Postgres, and the user-facing web service never calls a
+live external API (with the narrow `RENTCAST_ALLOW_LIVE=1` exception described
+above). A daily Render cron job is the only thing that touches the live APIs.
+
+**What changed:**
+- `db.py` (new) — psycopg2 connection pool, schema bootstrap (`api_cache` +
+  `tracked_zips`), `track_zip` / `list_zips_to_refresh` / `mark_refreshed` /
+  `get_cached` / `put_cached` / `stats`. Gracefully no-ops when `DATABASE_URL`
+  is unset so local dev without Postgres still imports cleanly.
+- `cache.py` (rewrite) — same decorator surface, now Postgres-backed.
+  Soft-miss by default. `.refresh(*args, **kwargs)` method on every wrapped
+  function force-calls live and writes the cache. `zip_arg=` parameter on the
+  decorator lets the cache row carry a queryable ZIP, with positional and
+  keyword call sites both supported via `inspect.signature`.
+- `fred_api.py`, `census_api.py` — rewritten to use `@cache.cached`
+  decoration instead of inline `cache.get`/`cache.put`. `fred_api.refresh_all()`
+  is the cron's entrypoint for the 7 FRED series.
+- `housing_api.py` — market_stats is strict soft-miss. The four non-warmable
+  endpoints (`get_properties`, AVMs, geofence) pass `allow_live=True` so the
+  `RENTCAST_ALLOW_LIVE` env flag can enable on-demand calls for them.
+- `refresh_cache.py` (new) — the cron entrypoint. Refreshes FRED first, then
+  iterates tracked ZIPs (static tier always, auto tier within 30-day window).
+  Each ZIP gets RentCast market_stats + Census demographics. Failures are
+  isolated per ZIP.
+- `app.py` — `db.init_db()` + `db.seed_static_zips(...)` on startup;
+  `db.track_zip(zip)` calls on `/market`, `/property`, `/signals`, `/compare`;
+  `_soft_miss` helper renders the new "Data pending" template.
+- `templates/error.html` — adds a `kind="pending"` variant with a friendlier
+  hourglass icon and copy explaining the refresh queue.
+- `render.yaml` — adds the Postgres database (`housing-db`,
+  `plan: basic-256mb`, PG16) and the cron service (`schedule: "0 3 * * *"`);
+  wires `DATABASE_URL` via `fromDatabase`. New env vars: `RENTCAST_WARM_ZIPS`,
+  `RENTCAST_ALLOW_LIVE`.
+- `requirements.txt` — adds `psycopg2-binary`.
+
+**Key decisions:**
+1. **All three APIs go to Postgres** — single source of truth, queryable,
+   visible. `.cache/` becomes alerts-only.
+2. **Hybrid ZIP tracking** — static floor seeded from env (`RENTCAST_WARM_ZIPS`)
+   plus auto-tracked entries added on user query. The auto tier has a 30-day
+   window so the cron's budget stays bounded.
+3. **Strict soft-miss + a narrow live escape** — the literal interpretation
+   of "never hit the API at request time" breaks `/property` and `/heatmap`
+   entirely for new queries (cron can't pre-warm by-address or by-coord).
+   `RENTCAST_ALLOW_LIVE=1` re-opens just those two surfaces; market_stats
+   stays strict regardless.
+4. **Daily cron** — matches the previous 24h TTL semantics. Schedule
+   "0 3 * * *" UTC ≈ late evening US Eastern.
+5. **DEV_MODE bypass preserved** — `record_fixtures.py` still works without
+   changes because the decorator allows live-fetch when `DEV_MODE=1`.
+
+**Verified locally** against a real Postgres 16 instance: schema bootstrap,
+static-vs-auto tier handling, soft-miss returns `None`, `.refresh()` writes,
+positional and keyword `zip_arg` extraction, Flask boot + `/` + `/market`
+soft-miss path all green.
