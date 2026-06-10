@@ -17,4 +17,7 @@ README.md
 *.md
 Dockerfile
 .dockerignore
+render.yaml
 .DS_Store
+*.crt
+*.pem

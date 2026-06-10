@@ -478,3 +478,17 @@ this in a different code base that works better I am all for it"
 - TIGERweb fixtures not yet recorded into `dev_cache.sqlite` (sandbox had no
   network egress) — run `DEV_MODE=1 python record_fixtures.py <zips>` to capture
 - Heatmap rewrite needs browser verification on real data (sandbox-blocked)
+
+**Deployment verification (same session):**
+- Docker image built and run end-to-end in-sandbox: gunicorn binds Render's
+  injected `PORT`, all routes serve, image contains no `.env` / fixture DB /
+  planning docs
+- Persistence path verified: alert created in one container, volume mounted at
+  `/app/.cache` (as Render's disk is), alert survived container replacement
+- `requirements.txt` pinned to the tested versions (flask 3.1.3, requests
+  2.33.1, python-dotenv 1.2.2, twilio 9.10.9, gunicorn 26.0.0)
+- `Dockerfile` gained an overridable `BASE_IMAGE` build arg (Docker Hub
+  rate-limit escape hatch for CI; default unchanged)
+- `render.yaml`: added missing `ALERT_TO_NUMBER` (SMS destination — without it
+  alerts only log to stdout); dropped `PYTHON_VERSION` (no-op under the Docker
+  runtime)

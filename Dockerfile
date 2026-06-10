@@ -1,4 +1,7 @@
-FROM python:3.12-slim
+# Overridable so CI/sandboxes hitting Docker Hub rate limits can build from a
+# mirror, e.g. --build-arg BASE_IMAGE=public.ecr.aws/docker/library/python:3.12-slim
+ARG BASE_IMAGE=python:3.12-slim
+FROM ${BASE_IMAGE}
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
