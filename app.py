@@ -4,6 +4,7 @@ import alerts as alert_mgr
 import metrics
 import fred_api
 import census_api
+import schools_api
 
 app = Flask(__name__)
 
@@ -123,6 +124,10 @@ def property_lookup():
     zip_code     = prop.get("zipCode") if prop else None
     demographics = census_api.get_zip_demographics(zip_code) if zip_code else None
 
+    districts = None
+    if prop and prop.get("latitude") and prop.get("longitude"):
+        districts = schools_api.get_districts_for_point(prop["latitude"], prop["longitude"])
+
     return render_template(
         "property.html",
         address=address,
@@ -131,6 +136,7 @@ def property_lookup():
         sale_est=sale_est,
         investor_metrics=investor_metrics,
         demographics=demographics,
+        districts=districts,
         census_configured=census_api.is_configured(),
     )
 
@@ -338,6 +344,29 @@ def heatmap_data():
         })
 
     return jsonify(features)
+
+
+# ── School District Layer ─────────────────────────────────────────────────────
+
+@app.route("/api/school-districts")
+def school_districts():
+    west  = request.args.get("west",  type=float)
+    south = request.args.get("south", type=float)
+    east  = request.args.get("east",  type=float)
+    north = request.args.get("north", type=float)
+    level = request.args.get("level", "unified")
+
+    if None in (west, south, east, north):
+        return jsonify({"error": "west, south, east and north are required"}), 400
+    if level not in schools_api.LEVELS:
+        return jsonify({"error": f"level must be one of: {', '.join(schools_api.LEVELS)}"}), 400
+    if (east - west) > schools_api.MAX_BBOX_SPAN or (north - south) > schools_api.MAX_BBOX_SPAN:
+        return jsonify({"error": "View too wide for district boundaries — zoom in first"}), 400
+
+    fc = schools_api.get_districts_by_bbox(west, south, east, north, level)
+    if fc is None:
+        return jsonify({"error": "School district service unavailable"}), 502
+    return jsonify(fc)
 
 
 # ── Alerts ────────────────────────────────────────────────────────────────────

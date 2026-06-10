@@ -33,10 +33,21 @@
     </div>
 
     <div class="flex flex-col">
+      <label class="text-label-sm text-on-surface-variant mb-1">School districts</label>
+      <select id="districtSelect"
+              class="border border-outline-variant rounded px-2 py-1.5 text-label-md bg-white focus:outline-none focus:ring-2 focus:ring-secondary/30">
+        <option value="">Off</option>
+        <option value="unified">Unified</option>
+        <option value="elementary">Elementary</option>
+        <option value="secondary">Secondary</option>
+      </select>
+    </div>
+
+    <div class="flex flex-col">
       <label class="text-label-sm text-on-surface-variant mb-1">
-        Resolution <span id="resLabel" class="font-semibold text-secondary ml-1">85</span>
+        Resolution <span id="resLabel" class="font-semibold text-secondary ml-1">60</span>
       </label>
-      <input id="resSlider" type="range" min="20" max="140" value="85" step="5"
+      <input id="resSlider" type="range" min="20" max="120" value="60" step="5"
              oninput="document.getElementById('resLabel').textContent = this.value; rerenderHeat();"
              class="w-32 accent-secondary">
     </div>
@@ -52,15 +63,15 @@
 
     <div class="flex flex-col">
       <label class="text-label-sm text-on-surface-variant mb-1">
-        Opacity <span id="opacityLabel" class="font-semibold text-secondary ml-1">75%</span>
+        Opacity <span id="opacityLabel" class="font-semibold text-secondary ml-1">65%</span>
       </label>
-      <input id="opacitySlider" type="range" min="20" max="95" value="75"
-             oninput="document.getElementById('opacityLabel').textContent = this.value + '%'; rerenderHeat();"
+      <input id="opacitySlider" type="range" min="20" max="95" value="65"
+             oninput="document.getElementById('opacityLabel').textContent = this.value + '%'; applyOpacity();"
              class="w-32 accent-secondary">
     </div>
 
     <label class="flex items-center gap-2 cursor-pointer self-center pt-4">
-      <input type="checkbox" id="showMarkers" checked onchange="renderMarkers()" class="accent-secondary w-4 h-4">
+      <input type="checkbox" id="showMarkers" checked onchange="applyMarkerVisibility()" class="accent-secondary w-4 h-4">
       <span class="text-label-md text-on-surface">Listings</span>
     </label>
 
@@ -128,71 +139,103 @@
 {% endblock %}
 
 {% block scripts %}
+<!-- MapLibre GL renders everything on the GPU. The previous Leaflet build
+     pushed canvas hexagons through CSS blur(10px) + mix-blend-mode on every
+     frame, which is what made pan/zoom stutter and the field "drift". -->
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 <script src="https://unpkg.com/@turf/turf@7/turf.min.js"></script>
-<style>
-  /* Smooth the hex grid into a continuous field. The blur dissolves the
-     hexagon edges; mix-blend-mode lets the basemap's labels and roads
-     show through so the heat doesn't look pasted on top.            */
-  .leaflet-pane.heat-pane {
-    mix-blend-mode: multiply;
-    filter: blur(10px) saturate(1.05);
-    will-change: transform;
-  }
-  /* The hull outline is informational, not decorative — keep it whisper-thin
-     and only visible on hover over the map area so it isn't a constant
-     visual element fighting with the heat field.                          */
-  .leaflet-pane.hull-pane { opacity: 0.55; }
-  /* Listing markers look more crafted with a soft glow under the white ring. */
-  .leaflet-pane.listing-pane canvas { filter: drop-shadow(0 1px 2px rgba(11,28,48,0.25)); }
-</style>
 <script>
 // ── State ─────────────────────────────────────────────────────────────────────
 let allData     = [];     // raw API response
 let heatData    = [];     // filtered {lat, lng, value, raw} for the current metric
-let heatLayer   = null;   // L.geoJSON of the interpolated cells
-let hullLayer   = null;   // L.geoJSON soft outline of dataHull — shows the user where the field's authority ends
-let markerGroup = null;   // L.layerGroup of property CircleMarkers
 let dataHull    = null;   // turf Feature<Polygon> — buffered convex hull of loaded points
 let hullBbox    = null;   // [w, s, e, n] derived from dataHull (anchors the IDW grid)
 let autoLoad    = false;  // refetch on every moveend when true
 let moveTimer   = null;   // debounce timer for auto-load
-let currentAbort = null;  // AbortController for in-flight fetch
+let currentAbort = null;  // AbortController for in-flight property fetch
+let styleReady  = false;  // sources/layers can only be touched after style load
+
+const EMPTY_FC = { type: 'FeatureCollection', features: [] };
 
 // ── Map init ──────────────────────────────────────────────────────────────────
-// No preferCanvas at the map level — we attach explicit per-pane canvas
-// renderers below. The previous setup (preferCanvas: true + layers assigned
-// to a custom pane with no renderer) bound paths to the default overlayPane
-// canvas, which has no padding buffer and re-renders only on moveend — the
-// visible symptom was the heat field "drifting" during pan and re-sizing
-// inconsistently at zoom changes.
-const map = L.map('map').setView([29.42, -98.49], 11);
+// CARTO Positron GL style — same neutral basemap as before, but as vector
+// tiles so labels stay crisp at every zoom and the heat field can sit
+// between the land and the road/label layers.
+const map = new maplibregl.Map({
+  container: 'map',
+  style: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
+  center: [-98.49, 29.42],
+  zoom: 10,
+  attributionControl: { compact: true },
+});
+map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
 
-// CARTO Positron — neutral light tiles let the heat colors carry the chart
-// instead of fighting OSM's reds/greens. Falls back to OSM if CARTO 404s.
-L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-  attribution: '© OpenStreetMap contributors © CARTO',
-  subdomains: 'abcd',
-  maxZoom: 19,
-}).addTo(map);
+// Insert the heat fill *below* the basemap's road/label layers so streets and
+// place names render on top of the field — replaces the old mix-blend-mode
+// hack with real layer ordering.
+function firstSymbolLayerId() {
+  for (const layer of map.getStyle().layers) {
+    if (layer.type === 'symbol' || layer.type === 'line') return layer.id;
+  }
+  return undefined;
+}
 
-// Dedicated panes — each gets its OWN canvas renderer with viewport padding,
-// so layers actually render where they're declared (instead of falling back
-// to the default overlayPane canvas) and pans within ±50% of the viewport
-// don't reveal unrendered edges.
-map.createPane('heatPane');
-map.getPane('heatPane').style.zIndex = 410;
-map.getPane('heatPane').classList.add('heat-pane');
-const heatRenderer = L.canvas({ pane: 'heatPane', padding: 0.5 });
+map.on('load', () => {
+  const beforeId = firstSymbolLayerId();
 
-map.createPane('hullPane');
-map.getPane('hullPane').style.zIndex = 420;
-map.getPane('hullPane').classList.add('hull-pane');
-const hullRenderer = L.canvas({ pane: 'hullPane', padding: 0.5 });
+  map.addSource('heat',      { type: 'geojson', data: EMPTY_FC });
+  map.addSource('hull',      { type: 'geojson', data: EMPTY_FC });
+  map.addSource('districts', { type: 'geojson', data: EMPTY_FC });
+  map.addSource('listings',  { type: 'geojson', data: EMPTY_FC });
 
-map.createPane('listingPane');
-map.getPane('listingPane').style.zIndex = 450;
-map.getPane('listingPane').classList.add('listing-pane');
-const listingRenderer = L.canvas({ pane: 'listingPane', padding: 0.5 });
+  map.addLayer({
+    id: 'heat-fill', type: 'fill', source: 'heat',
+    paint: { 'fill-color': ['get', 'color'], 'fill-opacity': 0.65, 'fill-antialias': false },
+  }, beforeId);
+
+  map.addLayer({
+    id: 'hull-line', type: 'line', source: 'hull',
+    paint: { 'line-color': '#0b1c30', 'line-width': 1.25, 'line-opacity': 0.5 },
+  });
+
+  map.addLayer({
+    id: 'districts-fill', type: 'fill', source: 'districts',
+    paint: { 'fill-color': '#3755c3', 'fill-opacity': 0.04 },
+  });
+  map.addLayer({
+    id: 'districts-line', type: 'line', source: 'districts',
+    paint: { 'line-color': '#0b1c30', 'line-width': 1.5, 'line-dasharray': [3, 2], 'line-opacity': 0.8 },
+  });
+  map.addLayer({
+    id: 'districts-label', type: 'symbol', source: 'districts',
+    layout: {
+      'text-field': ['get', 'name'],
+      'text-size': 11,
+      'text-font': ['Montserrat Medium', 'Open Sans Regular'],
+    },
+    paint: { 'text-color': '#0b1c30', 'text-halo-color': '#ffffff', 'text-halo-width': 1.2 },
+  });
+
+  map.addLayer({
+    id: 'listing-dots', type: 'circle', source: 'listings',
+    paint: {
+      'circle-radius': 5.5,
+      'circle-color': ['get', 'color'],
+      'circle-stroke-color': '#ffffff',
+      'circle-stroke-width': 1.5,
+    },
+  });
+
+  styleReady = true;
+  applyOpacity();
+  wireInteractions();
+
+  // If the user hit "Load heatmap" (or toggled districts) before the style
+  // finished loading, render what we already have.
+  if (heatData.length > 0) { renderHeat(); renderMarkers(); }
+  if (districtLevel()) loadDistricts();
+});
 
 // IP-based recenter on first load.
 fetch('https://ipapi.co/json/')
@@ -200,7 +243,7 @@ fetch('https://ipapi.co/json/')
   .then(d => {
     if (!d || !d.latitude || !d.longitude) return;
     if (heatData.length > 0) return;
-    map.setView([d.latitude, d.longitude], 11);
+    map.jumpTo({ center: [d.longitude, d.latitude], zoom: 10 });
   })
   .catch(() => {});
 
@@ -212,13 +255,12 @@ function tToRGB(t) {
   const f = seg - i;
   return stops[i].map((c, j) => Math.round(c + (stops[i+1][j] - c) * f));
 }
+function tToCSS(t) { const [r, g, b] = tToRGB(t); return `rgb(${r},${g},${b})`; }
 
 // ── Percentile-clamped color scale ────────────────────────────────────────────
 // Outliers (e.g. a single $1.285M listing among $200k–$400k properties) would
-// otherwise crush the gradient — every non-outlier cell falls in the bottom 5%
-// of the [min,max] range and renders as a uniform green. We clamp the gradient
-// to the p5–p95 band so the middle 90% of values get the full color spread,
-// and values outside that band saturate at the gradient endpoints.
+// otherwise crush the gradient — we clamp it to the p5–p95 band so the middle
+// 90% of values get the full color spread.
 function percentile(sortedAsc, p) {
   const n = sortedAsc.length;
   if (n === 0) return 0;
@@ -333,35 +375,18 @@ async function fetchAndRender() {
     heatData = buildHeatData(metric);
 
     if (heatData.length === 0) {
-      clearLayers();
+      clearHeatLayers();
       showError(`No properties with "${METRIC_LABELS[metric]}" data found in this view.`);
       return;
     }
 
-    // Anchor the IDW grid to the convex hull of the loaded data — see
-    // recomputeHull() for details. Must be redone on metric switch too.
     recomputeHull();
-
-    // Surface the computed bbox so any residual position/scale weirdness is
-    // diagnosable from devtools without another code change. The "diameter"
-    // check catches the canonical failure mode: a single bad coordinate
-    // slipping both filters and ballooning the hull across a continent.
-    const [bw, bs, be, bn] = hullBbox;
-    const diagMidLat = (bs + bn) / 2;
-    const diagWidthKm  = Math.abs(be - bw) * 111 * Math.cos(diagMidLat * Math.PI / 180);
-    const diagHeightKm = Math.abs(bn - bs) * 111;
-    const hullDiameterKm = Math.hypot(diagWidthKm, diagHeightKm);
-    console.log('heatmap:', { points: heatData.length, hullBbox, hullDiameterKm });
-    if (hullDiameterKm > 200 && heatData.length < 500) {
-      console.warn(`heatmap: hull diameter ${hullDiameterKm.toFixed(0)} km with only ${heatData.length} points — likely a bad coordinate slipped the filters; inspect heatData for outliers`);
-    }
-
     renderHeat();
     renderMarkers();
     updateViewBadge();
   } catch (e) {
     if (e.name === 'AbortError') return;  // superseded by a newer request
-    clearLayers();
+    clearHeatLayers();
     showError(e.message || 'Failed to load properties.');
   } finally {
     if (!signal.aborted) showLoading(false);
@@ -391,7 +416,7 @@ function onMetricChange() {
   const metric = currentMetric();
   const next = buildHeatData(metric);
   if (next.length === 0) {
-    clearLayers();
+    clearHeatLayers();
     showError(`No data for "${METRIC_LABELS[metric]}" in the loaded area.`);
     return;
   }
@@ -404,22 +429,32 @@ function onMetricChange() {
   renderMarkers();
 }
 
-// ── Heat layer (turf.interpolate IDW grid → GeoJSON polygons) ─────────────────
-function renderHeat() {
-  if (heatData.length === 0 || !hullBbox) return;
+// ── Heat field: IDW point grid → smooth filled contour bands ──────────────────
+// turf.interpolate still does the IDW (value-across-space, per the project's
+// IDW-not-KDE decision), but instead of drawing the raw hex cells and blurring
+// them with CSS, we run the grid through turf.isobands and render filled
+// contour polygons — a clean topographic read with no per-frame filter cost.
+const N_BANDS = 14;
 
-  // p5/p95 clamping prevents single outliers from washing the field to a
-  // uniform green; legend below still surfaces the actual min/max.
+function intersectPair(a, b) {
+  try {
+    return turf.intersect(turf.featureCollection([a, b]));
+  } catch (e) {
+    return a;  // degenerate geometry — render unclipped rather than nothing
+  }
+}
+
+function renderHeat() {
+  if (!styleReady || heatData.length === 0 || !hullBbox) return;
+
   const { p5, p95, minV, maxV, range } = computeColorScale(heatData);
 
-  // GeoJSON points (lng,lat order). The interpolated property is `v`.
   const fc = turf.featureCollection(
     heatData.map(p => turf.point([p.lng, p.lat], { v: p.value }))
   );
 
-  // Cell size: derive from the bbox so we get ~`resolution` cells across the
-  // longer side regardless of zoom. Units in kilometers.
-  const res = parseInt(document.getElementById('resSlider').value);
+  // Cell size: ~`resolution` grid points across the longer side of the hull.
+  const res   = parseInt(document.getElementById('resSlider').value);
   const power = parseFloat(document.getElementById('powerSlider').value);
 
   const [w, s, e, n] = hullBbox;
@@ -429,68 +464,47 @@ function renderHeat() {
   const cellSize = Math.max(widthKm, heightKm) / res;
 
   const grid = turf.interpolate(fc, cellSize, {
-    gridType: 'hex',
+    gridType: 'point',
     property: 'v',
     weight:   power,
     units:    'kilometers',
     bbox:     hullBbox,
   });
 
-  // Clip the grid to the buffered hull. turf.interpolate fills the full bbox,
-  // so hexagons in the corners outside the hull would otherwise render fake
-  // extrapolated values from far-away points. Keep only cells whose centroid
-  // lies inside dataHull. (When dataHull is null — <3 unique points — we
-  // skip clipping and render the full bbox as a fallback.)
-  const clipped = dataHull
-    ? {
-        type: 'FeatureCollection',
-        features: grid.features.filter(f =>
-          turf.booleanPointInPolygon(turf.centroid(f), dataHull)
-        ),
-      }
-    : grid;
+  // Band breaks span the full data range, but the interior steps are spread
+  // across the clamped p5–p95 band so outliers don't eat the gradient.
+  const eps    = (range * 1e-6) || 1e-6;
+  const breaks = [Math.min(minV, p5) - eps];
+  for (let i = 0; i <= N_BANDS; i++) breaks.push(p5 + (range * i) / N_BANDS);
+  breaks.push(Math.max(maxV, p95) + eps);
+  const cleaned = breaks.filter((b, i) => i === 0 || b > breaks[i - 1]);
 
-  if (heatLayer) map.removeLayer(heatLayer);
-
-  const opacity = parseInt(document.getElementById('opacitySlider').value) / 100;
-
-  heatLayer = L.geoJSON(clipped, {
-    pane:     'heatPane',
-    renderer: heatRenderer,
-    style: feature => {
-      const t = Math.max(0, Math.min(1, (feature.properties.v - p5) / range));
-      const [r, g, b] = tToRGB(t);
-      return {
-        // Slight overlap on the fill (no stroke, but a tiny 0.5px weight of
-        // the same color) closes the sub-pixel seams between adjacent hexes
-        // that the blur filter would otherwise reveal as a faint hex grid.
-        fillColor:   `rgb(${r},${g},${b})`,
-        fillOpacity: opacity,
-        color:       `rgb(${r},${g},${b})`,
-        weight:      0.5,
-        opacity:     opacity,
-      };
-    },
-    interactive: false,
-  }).addTo(map);
-
-  // Soft solid-stroke outline of the buffered hull so the user can see where
-  // the IDW field's authority ends. Replaced the previous dashed look — it
-  // read as unfinished. The CSS .hull-pane class tones it down further.
-  if (hullLayer) map.removeLayer(hullLayer);
-  if (dataHull) {
-    hullLayer = L.geoJSON(dataHull, {
-      pane:     'hullPane',
-      renderer: hullRenderer,
-      style: {
-        color:   '#0b1c30',
-        weight:  1.25,
-        opacity: 0.7,
-        fill:    false,
-      },
-      interactive: false,
-    }).addTo(map);
+  let bands;
+  try {
+    bands = turf.isobands(grid, cleaned, { zProperty: 'v' });
+  } catch (err) {
+    console.warn('heatmap: isobands failed', err);
+    showError('Could not contour this data — try a lower resolution.');
+    return;
   }
+
+  // Clip each band to the buffered hull so the field doesn't extrapolate
+  // into the bbox corners, and color it by its midpoint value.
+  const features = [];
+  bands.features.forEach(band => {
+    // Band range arrives as a "lower-upper" string — pull the numbers out
+    // with a regex so negative values and 1e-6 notation don't break parsing.
+    const nums = (String(band.properties.v).match(/-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g) || []).map(Number);
+    if (nums.length < 2) return;
+    const mid = (nums[0] + nums[1]) / 2;
+    const clipped = dataHull ? intersectPair(band, dataHull) : band;
+    if (!clipped) return;  // band entirely outside the hull
+    clipped.properties = { color: tToCSS((mid - p5) / range) };
+    features.push(clipped);
+  });
+
+  map.getSource('heat').setData({ type: 'FeatureCollection', features });
+  map.getSource('hull').setData(dataHull || EMPTY_FC);
 
   showLegend({ p5, p95, minV, maxV }, heatData.length);
 }
@@ -499,44 +513,38 @@ function rerenderHeat() {
   if (heatData.length > 0) renderHeat();
 }
 
+function applyOpacity() {
+  if (!styleReady) return;
+  const opacity = parseInt(document.getElementById('opacitySlider').value) / 100;
+  map.setPaintProperty('heat-fill', 'fill-opacity', opacity);
+}
+
 // ── Listing markers ───────────────────────────────────────────────────────────
 function renderMarkers() {
-  if (markerGroup) map.removeLayer(markerGroup);
-  if (!document.getElementById('showMarkers').checked || heatData.length === 0) {
-    markerGroup = null;
-    return;
-  }
-
-  // Same p5/p95 clamping as renderHeat so markers and field stay in sync.
+  if (!styleReady) return;
   const { p5, range } = computeColorScale(heatData);
-  const metric = currentMetric();
+  const features = heatData.map(p => ({
+    type: 'Feature',
+    geometry: { type: 'Point', coordinates: [p.lng, p.lat] },
+    properties: {
+      color:   tToCSS((p.value - p5) / range),
+      value:   p.value,
+      address: p.raw.address || '',
+      meta: [
+        p.raw.bedrooms ? `${p.raw.bedrooms} bd` : '',
+        p.raw.sqft     ? `${p.raw.sqft.toLocaleString()} sqft` : '',
+        p.raw.propertyType || '',
+      ].filter(Boolean).join(' · '),
+    },
+  }));
+  map.getSource('listings').setData({ type: 'FeatureCollection', features });
+  applyMarkerVisibility();
+}
 
-  markerGroup = L.layerGroup();
-  for (const p of heatData) {
-    const t = Math.max(0, Math.min(1, (p.value - p5) / range));
-    const [r, g, b] = tToRGB(t);
-    const dot = L.circleMarker([p.lat, p.lng], {
-      pane:        'listingPane',
-      renderer:    listingRenderer,
-      radius:      5.5,
-      fillColor:   `rgb(${r},${g},${b})`,
-      fillOpacity: 1,
-      color:       '#ffffff',
-      weight:      1.5,
-    });
-    const bed  = p.raw.bedrooms ? `${p.raw.bedrooms} bd` : '';
-    const sqft = p.raw.sqft     ? `${p.raw.sqft.toLocaleString()} sqft` : '';
-    const meta = [bed, sqft, p.raw.propertyType].filter(Boolean).join(' · ');
-    dot.bindPopup(`
-      <div style="font-family:Inter,sans-serif;min-width:180px">
-        <div style="font-weight:600;color:#0b1c30;margin-bottom:2px">${escapeHtml(p.raw.address || 'Unknown address')}</div>
-        ${meta ? `<div style="font-size:12px;color:#45464d;margin-bottom:6px">${escapeHtml(meta)}</div>` : ''}
-        <div style="font-size:14px"><b>${METRIC_LABELS[metric]}:</b> ${formatMetric(p.value, metric)}</div>
-      </div>
-    `);
-    markerGroup.addLayer(dot);
-  }
-  markerGroup.addTo(map);
+function applyMarkerVisibility() {
+  if (!styleReady) return;
+  const on = document.getElementById('showMarkers').checked;
+  map.setLayoutProperty('listing-dots', 'visibility', on ? 'visible' : 'none');
 }
 
 function escapeHtml(s) {
@@ -545,11 +553,96 @@ function escapeHtml(s) {
   }[c]));
 }
 
+// ── School district overlay ───────────────────────────────────────────────────
+let districtAbort = null;
+let districtTimer = null;
+
+function districtLevel() { return document.getElementById('districtSelect').value; }
+
+async function loadDistricts() {
+  const level = districtLevel();
+  if (!level || !styleReady) return;
+  if (districtAbort) districtAbort.abort();
+  districtAbort = new AbortController();
+  const signal = districtAbort.signal;
+  const b = map.getBounds();
+  const params = new URLSearchParams({
+    west:  b.getWest().toFixed(4),
+    south: b.getSouth().toFixed(4),
+    east:  b.getEast().toFixed(4),
+    north: b.getNorth().toFixed(4),
+    level,
+  });
+  try {
+    const res  = await fetch('/api/school-districts?' + params, { signal });
+    const json = await res.json();
+    if (signal.aborted) return;
+    if (!res.ok || json.error) throw new Error(json.error || 'District request failed');
+    map.getSource('districts').setData(json);
+  } catch (e) {
+    if (e.name === 'AbortError') return;
+    showError(e.message || 'Failed to load school districts.');
+  }
+}
+
+document.getElementById('districtSelect').addEventListener('change', () => {
+  if (districtAbort) districtAbort.abort();
+  if (styleReady) map.getSource('districts').setData(EMPTY_FC);
+  loadDistricts();
+});
+
+map.on('moveend', () => {
+  if (!districtLevel()) return;
+  clearTimeout(districtTimer);
+  districtTimer = setTimeout(loadDistricts, 600);
+});
+
+// ── Popups & hover ────────────────────────────────────────────────────────────
+function wireInteractions() {
+  const districtPopup = new maplibregl.Popup({
+    closeButton: false, closeOnClick: false, className: 'district-popup',
+  });
+
+  map.on('mousemove', 'districts-fill', e => {
+    const p = (e.features[0] || {}).properties || {};
+    districtPopup
+      .setLngLat(e.lngLat)
+      .setHTML(
+        `<div style="font-family:Inter,sans-serif;font-size:12px">` +
+        `<b>${escapeHtml(p.name || 'Unknown district')}</b>` +
+        (p.grades ? `<br>Grades ${escapeHtml(p.grades)}` : '') +
+        `</div>`
+      )
+      .addTo(map);
+  });
+  map.on('mouseleave', 'districts-fill', () => districtPopup.remove());
+
+  map.on('click', 'listing-dots', e => {
+    const f = e.features[0];
+    const p = f.properties;
+    const metric = currentMetric();
+    new maplibregl.Popup({ closeButton: true })
+      .setLngLat(f.geometry.coordinates)
+      .setHTML(`
+        <div style="font-family:Inter,sans-serif;min-width:180px">
+          <div style="font-weight:600;color:#0b1c30;margin-bottom:2px">${escapeHtml(p.address || 'Unknown address')}</div>
+          ${p.meta ? `<div style="font-size:12px;color:#45464d;margin-bottom:6px">${escapeHtml(p.meta)}</div>` : ''}
+          <div style="font-size:14px"><b>${METRIC_LABELS[metric]}:</b> ${formatMetric(Number(p.value), metric)}</div>
+        </div>
+      `)
+      .addTo(map);
+  });
+  map.on('mouseenter', 'listing-dots', () => { map.getCanvas().style.cursor = 'pointer'; });
+  map.on('mouseleave', 'listing-dots', () => { map.getCanvas().style.cursor = ''; });
+}
+
 // ── Layer cleanup ─────────────────────────────────────────────────────────────
-function clearLayers() {
-  if (heatLayer)   { map.removeLayer(heatLayer);   heatLayer = null; }
-  if (hullLayer)   { map.removeLayer(hullLayer);   hullLayer = null; }
-  if (markerGroup) { map.removeLayer(markerGroup); markerGroup = null; }
+function clearHeatLayers() {
+  if (styleReady) {
+    map.getSource('heat').setData(EMPTY_FC);
+    map.getSource('hull').setData(EMPTY_FC);
+    map.getSource('listings').setData(EMPTY_FC);
+  }
   heatData = [];
   dataHull = null;
   hullBbox = null;
@@ -610,9 +703,5 @@ function showError(msg) {
 }
 
 function clearError() { document.getElementById('errorToast').classList.add('hidden'); }
-
-// Make sure Leaflet recomputes its container size on layout shifts.
-window.addEventListener('resize', () => map.invalidateSize());
-setTimeout(() => map.invalidateSize(), 0);
 </script>
 {% endblock %}

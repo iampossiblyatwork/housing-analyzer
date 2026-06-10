@@ -112,6 +112,29 @@
     </div>
     {% endif %}
 
+    {% if districts %}
+    <div class="bg-white border border-outline-variant rounded-lg overflow-hidden">
+      <div class="px-stack-md py-3 border-b border-outline-variant flex items-center gap-2">
+        <span class="material-symbols-outlined text-secondary filled" style="font-size:18px">school</span>
+        <h3 class="text-label-md font-semibold text-primary">School Districts</h3>
+        <span class="ml-auto text-label-sm text-outline">Census TIGERweb</span>
+      </div>
+      <table class="w-full">
+        <tbody class="divide-y divide-outline-variant">
+          {% for d in districts %}
+          <tr class="hover:bg-surface-container-low transition-colors">
+            <td class="px-gutter py-2.5 text-label-sm text-on-surface-variant w-28 capitalize">{{ d.level }}</td>
+            <td class="px-gutter py-2.5 text-label-md text-primary font-medium">{{ d.name or '—' }}</td>
+            <td class="px-gutter py-2.5 text-data-tabular text-on-surface-variant text-right whitespace-nowrap">
+              {{ ('Grades ' + d.grades) if d.grades else '—' }}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+
     {% if investor_metrics %}
     <div class="bg-white border border-outline-variant rounded-lg overflow-hidden">
       <div class="px-stack-md py-3 border-b border-outline-variant flex items-center gap-2">

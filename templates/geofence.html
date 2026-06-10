@@ -12,6 +12,18 @@
 
   <!-- Map -->
   <div class="lg:col-span-3">
+    <div class="flex items-center gap-2 mb-2">
+      <span class="material-symbols-outlined text-on-surface-variant" style="font-size:18px">school</span>
+      <label for="districtSelect" class="text-label-sm text-on-surface-variant">School district overlay</label>
+      <select id="districtSelect"
+              class="border border-outline-variant rounded px-2 py-1 text-label-sm bg-white focus:outline-none focus:ring-2 focus:ring-secondary/30">
+        <option value="">Off</option>
+        <option value="unified">Unified</option>
+        <option value="elementary">Elementary</option>
+        <option value="secondary">Secondary</option>
+      </select>
+      <span id="districtStatus" class="text-label-sm text-outline"></span>
+    </div>
     <div id="map" class="rounded-lg border border-outline-variant" style="height:460px;"></div>
   </div>
 
@@ -142,6 +154,74 @@ function updateCircle() {
     radius: r, color: '#3755c3', fillColor: '#3755c322', fillOpacity: 0.3
   }).addTo(map);
 }
+
+// ── School district overlay ──────────────────────────────────────────────────
+let districtLayer = null, districtAbort = null, districtTimer = null;
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({
+    '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'
+  }[c]));
+}
+
+function districtLevel() { return document.getElementById('districtSelect').value; }
+
+function setDistrictStatus(msg) { document.getElementById('districtStatus').textContent = msg || ''; }
+
+async function loadDistricts() {
+  const level = districtLevel();
+  if (!level) return;
+  if (districtAbort) districtAbort.abort();
+  districtAbort = new AbortController();
+  const signal = districtAbort.signal;
+  const b = map.getBounds();
+  const params = new URLSearchParams({
+    west:  b.getWest().toFixed(4),
+    south: b.getSouth().toFixed(4),
+    east:  b.getEast().toFixed(4),
+    north: b.getNorth().toFixed(4),
+    level,
+  });
+  setDistrictStatus('Loading…');
+  try {
+    const res  = await fetch('/api/school-districts?' + params, { signal });
+    const json = await res.json();
+    if (signal.aborted) return;
+    if (!res.ok || json.error) throw new Error(json.error || 'District request failed');
+    if (districtLayer) map.removeLayer(districtLayer);
+    districtLayer = L.geoJSON(json, {
+      style: { color: '#0b1c30', weight: 1.5, dashArray: '6 3', opacity: 0.8,
+               fillColor: '#3755c3', fillOpacity: 0.04 },
+      onEachFeature: (feature, lyr) => {
+        const p = feature.properties || {};
+        lyr.bindTooltip(
+          `<b>${escapeHtml(p.name || 'Unknown district')}</b>` +
+          (p.grades ? ` · grades ${escapeHtml(p.grades)}` : ''),
+          { sticky: true }
+        );
+        lyr.on('mouseover', () => lyr.setStyle({ weight: 2.5, fillOpacity: 0.1 }));
+        lyr.on('mouseout',  () => districtLayer && districtLayer.resetStyle(lyr));
+      },
+    }).addTo(map);
+    setDistrictStatus((json.features || []).length + ' district(s) in view');
+  } catch (e) {
+    if (e.name === 'AbortError') return;
+    setDistrictStatus(e.message || 'Failed to load districts');
+  }
+}
+
+document.getElementById('districtSelect').addEventListener('change', () => {
+  if (districtAbort) districtAbort.abort();
+  if (districtLayer) { map.removeLayer(districtLayer); districtLayer = null; }
+  setDistrictStatus('');
+  loadDistricts();
+});
+
+map.on('moveend', () => {
+  if (!districtLevel()) return;
+  clearTimeout(districtTimer);
+  districtTimer = setTimeout(loadDistricts, 600);
+});
 
 {% if results %}
 const heatPoints = [

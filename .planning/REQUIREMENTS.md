@@ -42,11 +42,21 @@ Status: brownfield baseline (2026-05-17). Validated items are already shipped an
 - ✓ **ALT-01**: User can create and manage SMS alerts at `/alerts`
 - ✓ **ALT-02**: Alerts are evaluated on `/market` page load and sent via Twilio when configured
 
+### School District Layer (shipped 2026-06-10)
+- ✓ **SCH-01**: User can toggle a school district boundary overlay (unified/elementary/secondary) on the heatmap map
+- ✓ **SCH-02**: User can toggle the same overlay on the geofence map
+- ✓ **SCH-03**: User sees the property's school district(s) with grade ranges on `/property`
+- ✓ **SCH-04**: District boundaries come from Census TIGERweb (free, no key) via `/api/school-districts`, cached 7 days with dev fixtures
+
+### Heatmap Renderer (shipped 2026-06-10)
+- ✓ **HEAT-09**: Heatmap rebuilt on MapLibre GL (WebGL) with isoband contours — replaces the janky Leaflet canvas + CSS blur pipeline; IDW value-field approach retained
+
 ### Data Layer
 - ✓ **DATA-01**: RentCast v1 API wrapper with file-based TTL caching
 - ✓ **DATA-02**: FRED API client with 7 series, 24hr cache, graceful fallback if unconfigured
 - ✓ **DATA-03**: Census ACS client with 7-day cache, graceful fallback if unconfigured
 - ✓ **DATA-04**: Domain knowledge encoded in `metrics.py` (supply, affordability, investor, signal chain, composite signals)
+- ✓ **DATA-05**: Census TIGERweb school district client (`schools_api.py`) — free, keyless, graceful fallback
 
 ---
 
@@ -71,6 +81,7 @@ Status: brownfield baseline (2026-05-17). Validated items are already shipped an
 
 - [ ] **HEAT-08**: Sparse-DOM heatmap metric — source from `/markets` aggregate endpoint instead of per-property records
 - [ ] **ALT-03**: Background scheduler for alerts (no need until volume increases)
+- [ ] **SCH-05**: School quality data (ratings/enrollment) — boundaries only for now; free option is NCES CCD via Urban Institute API, ratings require a paid source
 
 ---
 

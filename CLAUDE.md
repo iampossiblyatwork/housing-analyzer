@@ -12,12 +12,13 @@ Surfaces 24-month sale and rental history with YoY comparisons, seasonal trend a
 leading/lagging signal chain, multi-ZIP time-series comparison, geofence search,
 metric-driven heatmap, investor calculator, metrics reference, and SMS alerts via Twilio.
 
-**Stack:** Python 3.12, Flask, gunicorn, RentCast API, FRED API, Census ACS API, Tailwind CSS (CDN), Chart.js, Leaflet, Twilio
+**Stack:** Python 3.12, Flask, gunicorn, RentCast API, FRED API, Census ACS API, Census TIGERweb, Tailwind CSS (CDN), Chart.js, Leaflet (geofence), MapLibre GL (heatmap), Twilio
 **Entry point:** `app.py` (Flask); production WSGI server is gunicorn (see `Dockerfile`)
 **Deployment:** `Dockerfile` + `render.yaml` for Render. 1 GB persistent disk mounted at `/app/.cache` so the 24-hr TTL cache and `alerts.json` survive deploys.
 **API wrapper:** `housing_api.py` — thin wrapper around RentCast v1 REST API
 **Macro data:** `fred_api.py` — FRED API client (optional, graceful fallback)
 **Demographics:** `census_api.py` — Census ACS client (optional, graceful fallback)
+**School districts:** `schools_api.py` — Census TIGERweb client (free, no key, graceful fallback)
 **Cache:** `cache.py` — file-based TTL cache, `.cache/` dir (gitignored)
 **Dev fixture store:** `dev_cache.py` — SQLite-backed; when `DEV_MODE=1`, decorated API wrappers consult it first and write back on miss. `dev_cache.sqlite` is committed so devs can work offline against captured responses.
 **Alert engine:** `alerts.py` — JSON-file-backed alert store with Twilio SMS delivery
@@ -37,6 +38,7 @@ metric-driven heatmap, investor calculator, metrics reference, and SMS alerts vi
 | `/reference` | Full metrics glossary rendered from PDF knowledge |
 | `/alerts` | SMS alert creation and management |
 | `/api/heatmap-data` | JSON endpoint — geofence search → metrics for heatmap |
+| `/api/school-districts` | JSON endpoint — TIGERweb bbox query → district boundary GeoJSON |
 
 ---
 
@@ -118,15 +120,22 @@ KDE shows where properties are clustered; IDW shows the VALUE of a metric across
 the spatial field. That's what the user asked for: "each data point should be a
 point in the mesh" — a continuous value field, not a density cloud.
 
-**Implementation:** `turf.interpolate` generates a hex IDW grid (configurable
-resolution + IDW power via toolbar sliders) sized to the **convex hull** of
-loaded points (buffered 3 km, not the viewport bbox — otherwise panning
-leaves a giant rectangle stretched across unrelated area). The grid is
-rendered as Leaflet GeoJSON polygons with `preferCanvas: true` for speed,
-and **clipped to the buffered hull** so hexagons in the bbox corners that
-fall outside the hull don't render fake extrapolated values. A dashed
-outline of the hull is drawn so users can see where the field's authority
-ends.
+**Implementation (rebuilt session 4 on MapLibre GL):** `turf.interpolate`
+generates an IDW **point grid** (configurable resolution + IDW power via
+toolbar sliders) sized to the **convex hull** of loaded points (buffered
+3 km, not the viewport bbox — otherwise panning leaves a giant rectangle
+stretched across unrelated area). The grid is contoured with
+`turf.isobands` into ~14 filled bands, each **clipped to the buffered
+hull** (`turf.intersect`) so bbox corners outside the hull don't render
+fake extrapolated values, then pushed into a MapLibre GeoJSON fill layer
+inserted *below* the basemap's road/label layers. A solid outline of the
+hull is drawn so users can see where the field's authority ends.
+
+The previous Leaflet implementation drew the raw hex cells and smoothed
+them with CSS `blur(10px)` + `mix-blend-mode: multiply` — that per-frame
+filter compositing is what made pan/zoom janky and the field "drift".
+Isobands + WebGL removes both the hex seams and the filter cost; the
+geofence page (simple pin/radius map) stays on Leaflet.
 
 The color gradient is clamped to the p5–p95 band so outliers don't wash
 the field to a uniform color; the legend surfaces both the gradient
@@ -240,6 +249,32 @@ Used in `/market` Macro Context tab and `/property` page to compute price-to-inc
 
 ---
 
+## Module: `schools_api.py` — School District Layer
+
+**API:** `tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/School_Districts/MapServer` (free, **no key**)
+
+NCES Local Education Agency boundaries as published by the Census Bureau, in three
+levels: `unified`, `elementary`, `secondary`. Cached 7 days; dev-fixture decorated.
+Any network/service failure returns `None` — callers render an "unavailable" state.
+
+- `get_districts_by_bbox(west, south, east, north, level)` → GeoJSON FeatureCollection.
+  Bbox is snapped outward to a 0.02° grid so small pans reuse cache entries; spans
+  wider than `MAX_BBOX_SPAN` (4°) are rejected by the route with a "zoom in" error.
+  Geometry simplified server-side (`maxAllowableOffset` ≈ 30 m) to keep payloads small.
+- `get_districts_for_point(lat, lng)` → list of district dicts across all three levels
+  (unified-only in most of the US; elementary + secondary where governance is split).
+- Layer ids are **discovered from service metadata** at runtime (TIGERweb has
+  renumbered layers across vintages); `f=geojson` with an Esri-JSON conversion fallback.
+- Feature properties are flattened to `{geoid, name, grades, level}`;
+  TIGER `LOGRADE`/`HIGRADE` codes formatted as e.g. `PK–12` / `K–8`.
+
+**Surfaces:** toggleable boundary overlay on `/heatmap` (MapLibre fill+line+label
+layers, hover popup) and `/geofence` (Leaflet GeoJSON, hover tooltip) — both driven
+by the Off/Unified/Elementary/Secondary select and refreshed (debounced) on pan —
+plus a "School Districts" card on `/property` (point lookup at the property's coords).
+
+---
+
 ## Module: `cache.py` — File-Based TTL Cache
 
 Stores JSON files in `.cache/` (gitignored). Key = MD5(namespace + params).
@@ -314,15 +349,16 @@ inline JSON passed via Jinja2 `| tojson` filter.
 
 **Route:** `/heatmap` (page) + `/api/heatmap-data` (JSON)
 
-**Data flow:**
-1. User clicks map → sets lat/lng inputs
-2. "Load Heatmap" → `fetchAndRender()` hits `/api/heatmap-data`
-3. Backend calls `search_by_geofence()`, extracts `price`, `price_per_sqft` (computed),
+**Data flow (MapLibre GL since session 4):**
+1. User pans/zooms to an area → "Load heatmap for view" → `fetchAndRender()`
+   hits `/api/heatmap-data` with the smallest circle covering the viewport
+2. Backend calls `search_by_geofence()`, extracts `price`, `price_per_sqft` (computed),
    `dom` per property → returns JSON array
-4. Client filters to selected metric, runs IDW on canvas, renders
-
-**Scale factor:** `scale = max(0.08, min(0.18, 800 / (W * N^0.3)))` — adapts to density,
-keeps render < 100ms for typical datasets.
+3. Client filters to selected metric, computes buffered convex hull,
+   `turf.interpolate` (IDW point grid) → `turf.isobands` (filled contours,
+   interior breaks spread across p5–p95) → clip to hull → MapLibre fill layer
+4. School district overlay (optional) renders from `/api/school-districts`
+   as fill + dashed line + label layers, refreshed (debounced) on pan
 
 **Color scale:** emerald `#10b981` (low) → amber `#f59e0b` (mid) → red `#ef4444` (high).
 Same direction for all metrics; users read legend min/max for orientation.
@@ -400,3 +436,45 @@ need more data than last year to account for seasonality"
 - YoY bars on signals/macro charts not yet implemented (deferred for context reasons)
 - `property.html` — Census demographics block added to route but template not yet updated
   (needs `demographics` + `census_configured` blocks added)
+
+### 2026-06-10 — Session 4
+**Trigger:** "complete overhaul … the most important thing that's missing is a school
+district layer" + "the 3-D topographical heatmap is very janky … if we need to write
+this in a different code base that works better I am all for it"
+
+**What changed:**
+- `schools_api.py` — new Census TIGERweb client (free, no key): district boundaries
+  by bbox (GeoJSON) and by point, three levels (unified/elementary/secondary),
+  7-day cache + dev fixtures, runtime layer-id discovery, Esri-JSON fallback,
+  grade-range formatting (`PK–12`)
+- `app.py` — new `/api/school-districts` endpoint (bbox validation, ≤4° span,
+  502 when the service is unreachable); `/property` now passes `districts`
+- `templates/heatmap.html` — **rebuilt on MapLibre GL JS** (CDN, zero-build kept):
+  IDW point grid → `turf.isobands` filled contours clipped to the hull, rendered
+  as a WebGL fill layer below the basemap's roads/labels; listings as a circle
+  layer with click popups; school district overlay (fill + dashed line + labels +
+  hover popup) via the new toolbar select; legend/badge/toolbar behavior preserved
+- `templates/geofence.html` — school district overlay select above the Leaflet map
+  (GeoJSON layer, hover tooltip, debounced refresh on pan)
+- `templates/property.html` — "School Districts" card (level, name, grade range)
+- `record_fixtures.py` — records TIGERweb point + bbox fixtures per ZIP centroid
+
+**Key decisions made in session 4:**
+1. **Census TIGERweb as the school district source** — free, keyless, same Census
+   family as ACS; GreatSchools-style ratings APIs are paid/closed, so the layer is
+   *boundaries + grade ranges*, not school quality scores (noted as possible v2)
+2. **Heatmap jank root-caused to CSS filter compositing** — Leaflet canvas hexes
+   under `blur(10px)` + `mix-blend-mode: multiply` re-filtered every frame; fixed
+   by moving rendering to WebGL (MapLibre) and replacing blur-smoothing with
+   marching-squares isobands. IDW (value-field, not KDE) stays — that decision
+   is about the math, not the renderer
+3. **Geofence page stays on Leaflet** — it's a simple pin/radius map; no reason
+   to churn it. Both map pages share the same `/api/school-districts` contract
+
+**Open / next steps:**
+- School quality data (ratings, test scores) needs a paid/keyed source — boundaries
+  only for now; NCES CCD enrollment via Urban Institute API would be a free add
+- District overlay on `/market` (districts serving a ZIP) not yet surfaced
+- TIGERweb fixtures not yet recorded into `dev_cache.sqlite` (sandbox had no
+  network egress) — run `DEV_MODE=1 python record_fixtures.py <zips>` to capture
+- Heatmap rewrite needs browser verification on real data (sandbox-blocked)

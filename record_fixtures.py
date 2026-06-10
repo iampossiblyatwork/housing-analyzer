@@ -5,8 +5,9 @@ Usage:
     DEV_MODE=1 python record_fixtures.py 78244 90210 11215
 
 Each ZIP triggers: rentcast market_stats, rentcast geofence (centered on ZIP
-centroid via market_stats lat/lng), census demographics, and one full FRED
-macro pull (which is ZIP-independent, so it only burns calls on the first ZIP).
+centroid via market_stats lat/lng), school districts (TIGERweb point + bbox
+around the centroid), census demographics, and one full FRED macro pull
+(which is ZIP-independent, so it only burns calls on the first ZIP).
 
 Skips namespaces that are already recorded for the same params.
 Reports a per-ZIP summary so you can see what was hit live vs. served from
@@ -23,6 +24,7 @@ import dev_cache
 import housing_api
 import fred_api
 import census_api
+import schools_api
 
 
 def _record_zip(zip_code):
@@ -45,8 +47,20 @@ def _record_zip(zip_code):
                 print(f"  geofence 3mi @ ({lat:.3f}, {lng:.3f}): ok")
             except Exception as e:
                 print(f"  geofence: FAILED ({e})")
+
+            districts = schools_api.get_districts_for_point(lat, lng)
+            if districts is None:
+                print(f"  schools point: FAILED")
+            else:
+                print(f"  schools point: ok ({len(districts)} district(s))")
+            # Bbox pull around the centroid so the map overlay works offline.
+            fc = schools_api.get_districts_by_bbox(lng - 0.15, lat - 0.15, lng + 0.15, lat + 0.15)
+            if fc is None:
+                print(f"  schools bbox: FAILED")
+            else:
+                print(f"  schools bbox: ok ({len(fc.get('features', []))} feature(s))")
         else:
-            print(f"  geofence: skipped (no lat/lng in market_stats)")
+            print(f"  geofence/schools: skipped (no lat/lng in market_stats)")
 
     try:
         census_api.get_zip_demographics(zip_code)
