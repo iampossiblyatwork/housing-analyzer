@@ -53,7 +53,11 @@ def _record_zip(zip_code):
                 print(f"  schools point: FAILED")
             else:
                 print(f"  schools point: ok ({len(districts)} district(s))")
-            # Bbox pull around the centroid so the map overlay works offline.
+            # Bbox pull around the centroid. Note: get_districts_by_bbox snaps the
+            # bbox outward to _BBOX_GRID (0.02°) before caching. A live heatmap/
+            # geofence viewport will snap to different grid cells, so this fixture
+            # will rarely produce a cache hit for the overlay — the dev fixture for
+            # school districts is most useful for point lookups, not the bbox overlay.
             fc = schools_api.get_districts_by_bbox(lng - 0.15, lat - 0.15, lng + 0.15, lat + 0.15)
             if fc is None:
                 print(f"  schools bbox: FAILED")

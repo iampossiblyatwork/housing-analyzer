@@ -48,7 +48,7 @@
         Resolution <span id="resLabel" class="font-semibold text-secondary ml-1">60</span>
       </label>
       <input id="resSlider" type="range" min="20" max="120" value="60" step="5"
-             oninput="document.getElementById('resLabel').textContent = this.value; rerenderHeat();"
+             oninput="document.getElementById('resLabel').textContent = this.value; debouncedRerender();"
              class="w-32 accent-secondary">
     </div>
 
@@ -57,7 +57,7 @@
         IDW power <span id="powerLabel" class="font-semibold text-secondary ml-1">2.0</span>
       </label>
       <input id="powerSlider" type="range" min="1" max="4" value="2" step="0.5"
-             oninput="document.getElementById('powerLabel').textContent = parseFloat(this.value).toFixed(1); rerenderHeat();"
+             oninput="document.getElementById('powerLabel').textContent = parseFloat(this.value).toFixed(1); debouncedRerender();"
              class="w-32 accent-secondary">
     </div>
 
@@ -153,6 +153,7 @@ let dataHull    = null;   // turf Feature<Polygon> — buffered convex hull of l
 let hullBbox    = null;   // [w, s, e, n] derived from dataHull (anchors the IDW grid)
 let autoLoad    = false;  // refetch on every moveend when true
 let moveTimer   = null;   // debounce timer for auto-load
+let rerenderTimer = null; // debounce timer for slider-driven rerenders
 let currentAbort = null;  // AbortController for in-flight property fetch
 let styleReady  = false;  // sources/layers can only be touched after style load
 
@@ -440,7 +441,8 @@ function intersectPair(a, b) {
   try {
     return turf.intersect(turf.featureCollection([a, b]));
   } catch (e) {
-    return a;  // degenerate geometry — render unclipped rather than nothing
+    console.warn('heatmap: intersect failed for band — skipping', e);
+    return null;  // skip degenerate band rather than leaking extrapolated color
   }
 }
 
@@ -490,15 +492,18 @@ function renderHeat() {
 
   // Clip each band to the buffered hull so the field doesn't extrapolate
   // into the bbox corners, and color it by its midpoint value.
+  // We use the band's index into cleaned[] rather than parsing band.properties.v:
+  // the "lower-upper" string format is ambiguous when values are positive because
+  // the separator "-" is indistinguishable from a negative sign (e.g. "200000-300000"
+  // parses as [200000, -300000], collapsing the entire gradient to one color).
   const features = [];
-  bands.features.forEach(band => {
-    // Band range arrives as a "lower-upper" string — pull the numbers out
-    // with a regex so negative values and 1e-6 notation don't break parsing.
-    const nums = (String(band.properties.v).match(/-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g) || []).map(Number);
-    if (nums.length < 2) return;
-    const mid = (nums[0] + nums[1]) / 2;
+  bands.features.forEach((band, bandIdx) => {
+    const lo = cleaned[bandIdx];
+    const hi = cleaned[bandIdx + 1];
+    if (lo === undefined || hi === undefined) return;
+    const mid = (lo + hi) / 2;
     const clipped = dataHull ? intersectPair(band, dataHull) : band;
-    if (!clipped) return;  // band entirely outside the hull
+    if (!clipped) return;  // band entirely outside the hull (or degenerate geometry)
     clipped.properties = { color: tToCSS((mid - p5) / range) };
     features.push(clipped);
   });
@@ -511,6 +516,13 @@ function renderHeat() {
 
 function rerenderHeat() {
   if (heatData.length > 0) renderHeat();
+}
+
+// Debounced version for slider oninput handlers — turf.interpolate + isobands
+// is expensive enough that firing on every tick causes visible UI jank.
+function debouncedRerender() {
+  clearTimeout(rerenderTimer);
+  rerenderTimer = setTimeout(rerenderHeat, 200);
 }
 
 function applyOpacity() {

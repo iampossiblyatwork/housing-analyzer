@@ -48,7 +48,7 @@ def get_districts_by_bbox(west, south, east, north, level="unified"):
     n = round(math.ceil(north  / _BBOX_GRID) * _BBOX_GRID, 2)
     try:
         return _districts_by_bbox(level, w, s, e, n)
-    except Exception:
+    except (requests.exceptions.RequestException, RuntimeError):
         return None
 
 
@@ -57,10 +57,12 @@ def get_districts_for_point(lat, lng):
 
     Returns at most one district per level — unified-only in most of the US,
     elementary + secondary where K-8/9-12 governance is split.
+    An empty list means the point is in a district-less area; None means the
+    service was unreachable.
     """
     try:
-        return _districts_for_point(round(float(lat), 4), round(float(lng), 4)) or None
-    except Exception:
+        return _districts_for_point(round(float(lat), 4), round(float(lng), 4))
+    except (requests.exceptions.RequestException, RuntimeError, ValueError):
         return None
 
 
@@ -84,6 +86,8 @@ def _layer_ids():
         for level in LEVELS:
             if level in name:
                 ids.setdefault(level, layer["id"])
+    if not ids:
+        raise RuntimeError("TIGERweb returned no school district layers — service may be misconfigured")
     return ids
 
 
@@ -116,10 +120,18 @@ def _esri_to_geojson(esri):
     feats = []
     for f in esri.get("features", []):
         rings = (f.get("geometry") or {}).get("rings")
-        # Esri polygons list outer rings and holes flat. Leaflet treats
-        # ring[0] as outer and the rest as holes — close enough for this
-        # display-only fallback path (primary path is f=geojson).
-        geom = {"type": "Polygon", "coordinates": rings} if rings else None
+        if not rings:
+            geom = None
+        elif len(rings) == 1:
+            geom = {"type": "Polygon", "coordinates": rings}
+        else:
+            # Multi-ring Esri geometry: each ring may be a separate outer
+            # polygon (island/enclave) rather than a hole in the first ring.
+            # Winding-order analysis is complex; wrapping each ring as its own
+            # polygon in a MultiPolygon is correct for districts with islands
+            # and degrades gracefully (holes render as filled) for the rare
+            # case of a district with an interior hole.
+            geom = {"type": "MultiPolygon", "coordinates": [[r] for r in rings]}
         feats.append({"type": "Feature", "geometry": geom,
                       "properties": f.get("attributes", {})})
     return {"type": "FeatureCollection", "features": feats}

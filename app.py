@@ -125,7 +125,7 @@ def property_lookup():
     demographics = census_api.get_zip_demographics(zip_code) if zip_code else None
 
     districts = None
-    if prop and prop.get("latitude") and prop.get("longitude"):
+    if prop and prop.get("latitude") is not None and prop.get("longitude") is not None:
         districts = schools_api.get_districts_for_point(prop["latitude"], prop["longitude"])
 
     return render_template(
